@@ -181,6 +181,7 @@ def main(args=None):
     rclpy.init(args=args)
     
     try:
+        pass
         node = YoloDetectionNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
