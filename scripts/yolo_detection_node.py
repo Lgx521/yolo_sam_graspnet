@@ -114,7 +114,7 @@ class YoloDetectionNode(Node):
         """接收RGB图像回调"""
         try:
             # Convert ROS image to OpenCV format
-            cv_image = self.bridge.imgmsg_to_cv2(msg, msg.encoding)
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "rgb8")
             self.latest_image = cv_image
             self.latest_image_time = msg.header.stamp
             
@@ -149,7 +149,7 @@ class YoloDetectionNode(Node):
             # 发布可视化图像
             if vis_img is not None:
                 try:
-                    detection_msg = self.bridge.cv2_to_imgmsg(vis_img, vis_img.encoding)
+                    detection_msg = self.bridge.cv2_to_imgmsg(vis_img, "rgb8")
                     detection_msg.header.stamp = self.latest_image_time if self.latest_image_time else self.get_clock().now().to_msg()
                     detection_msg.header.frame_id = "camera_color_frame"
                     
