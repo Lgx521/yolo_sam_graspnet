@@ -1,0 +1,22 @@
+# Request
+sensor_msgs/Image color_image
+sensor_msgs/Image depth_image
+sensor_msgs/CameraInfo camera_info
+# Optional workspace constraints
+geometry_msgs/Point workspace_min
+geometry_msgs/Point workspace_max
+int32 max_grasps 10
+# Target object class for intelligent segmentation
+string target_object_class
+---
+# Response
+bool success
+string message
+# Array of detected grasps
+geometry_msgs/PoseStamped[] grasp_poses
+float32[] grasp_scores
+float32[] grasp_widths
+float32[] grasp_depths
+int32 total_grasps_detected
+int32 grasps_after_filtering
+float32 inference_time

@@ -1,0 +1,14 @@
+# Request
+geometry_msgs/PoseStamped grasp_pose
+float32 grasp_width
+float32 approach_distance 0.1
+float32 max_velocity_scaling 0.3
+float32 max_acceleration_scaling 0.3
+---
+# Response
+bool success
+string message
+# Execution details
+float32 planning_time
+float32 execution_time
+geometry_msgs/PoseStamped final_pose
