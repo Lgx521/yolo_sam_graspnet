@@ -55,7 +55,7 @@ class YoloDetectionNode(Node):
         # Declare parameters
         self.declare_parameter('color_image_topic', '/camera/color/image_raw')
         self.declare_parameter('target_object_class', '')  # 空字符串表示检测所有对象
-        self.declare_parameter('detection_fps', 2.0)  # 检测频率 (Hz)
+        self.declare_parameter('detection_fps', 0.00001)  # 检测频率 (Hz)
         self.declare_parameter('confidence_threshold', 0.25)
         self.declare_parameter('verbose', False)  # 新增参数控制是否输出详细信息
         
@@ -181,9 +181,6 @@ def main(args=None):
     rclpy.init(args=args)
     
     try:
-        rclpy.get_logger().info("service ceased")
-        pass
-        rclpy.get_logger().info("service started")
         node = YoloDetectionNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
