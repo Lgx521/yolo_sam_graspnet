@@ -181,9 +181,9 @@ def main(args=None):
     rclpy.init(args=args)
     
     try:
-        print("service ceased")
+        rclpy.get_logger().info("service ceased")
         pass
-        print("service started")
+        rclpy.get_logger().info("service started")
         node = YoloDetectionNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
