@@ -26,6 +26,15 @@ import argparse
 import scipy.io as scio
 from PIL import Image as PilImage # Use a different alias to avoid confusion
 
+import datetime
+
+# 获取当前时间
+current_time = datetime.datetime.now()
+
+# 将时间格式化为字符串 (例如: 2023-10-27_15-30-00)
+# 这种格式不含特殊字符，适合用于文件名
+formatted_time = current_time.strftime("%Y-%m-%d_%H-%M-%S")
+
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
@@ -78,10 +87,11 @@ class GraspNetProcessorNode(Node):
                 cylinder_radius=0.05, hmin=-0.02, hmax_list=[0.01,0.02,0.03,0.04], is_training=False)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         net.to(device)
-        checkpoint = torch.load(self.cfgs.checkpoint_path)
+        path = "graspnet-baseline/checkpoint-rs.tar"
+        checkpoint = torch.load(path)
         net.load_state_dict(checkpoint['model_state_dict'])
         start_epoch = checkpoint['epoch']
-        self.get_logger().info(f"-> loaded checkpoint '{self.cfgs.checkpoint_path}' (epoch: {start_epoch})")
+        self.get_logger().info(f"-> loaded checkpoint '{path}' (epoch: {start_epoch})")
         net.eval()
         return net
 
@@ -165,8 +175,9 @@ class GraspNetProcessorNode(Node):
             self.get_logger().info(f"碰撞检测后剩余 {len(gg)} 个抓取。")
 
         # --- 第5步: 保存结果 ---
-        self.get_logger().info(f"正在将结果保存到 '{self.cfgs.output_dir}' 目录...")
-        self._save_results(gg, scene_cloud, intrinsic_matrix, factor_depth, self.cfgs.output_dir)
+        self.output_dir = f"visualization_output/graspnet_ros_output_{formatted_time}"
+        self.get_logger().info(f"正在将结果保存到 '{self.output_dir}' 目录...")
+        self._save_results(gg, scene_cloud, intrinsic_matrix, factor_depth, self.output_dir)
 
         # --- 第6步: 可视化结果 ---
         self.get_logger().info("正在启动可视化窗口... (关闭窗口后程序将退出)")
@@ -223,12 +234,12 @@ class GraspNetProcessorNode(Node):
 def main():
     # --- 使用argparse解析GraspNet的参数 ---
     parser = argparse.ArgumentParser(description="一站式GraspNet处理脚本 for ROS2")
-    parser.add_argument('--checkpoint_path', required=True, help='GraspNet模型检查点路径')
+    parser.add_argument('--checkpoint_path', help='GraspNet模型检查点路径')
     parser.add_argument('--num_point', type=int, default=20000, help='采样点数量')
     parser.add_argument('--num_view', type=int, default=300, help='视角数量')
     parser.add_argument('--collision_thresh', type=float, default=0.01, help='碰撞检测阈值')
     parser.add_argument('--voxel_size', type=float, default=0.01, help='体素大小')
-    parser.add_argument('--output_dir', type=str, default='graspnet_ros_output', help='保存结果的目录')
+    # parser.add_argument('--output_dir', type=str, default='graspnet_ros_output', help='保存结果的目录')
     
     # 解析参数
     cfgs, ros_args = parser.parse_known_args()
