@@ -178,7 +178,10 @@ class GraspNetProcessorNode(Node):
             self.get_logger().info(f"碰撞检测后剩余 {len(gg)} 个抓取。")
 
         # --- 第5步: 保存结果 ---
-        self.output_dir = f"visualization_output/graspnet_ros_output_{formatted_time}"
+        script_path = os.path.realpath(__file__)
+        folder_path = os.path.dirname(script_path)
+        self.output_dir = os.path.join(folder_path, f"visualization_output/graspnet_ros_output_{formatted_time}")
+        # self.output_dir = f"visualization_output/graspnet_ros_output_{formatted_time}"
         self.get_logger().info(f"正在将结果保存到 '{self.output_dir}' 目录...")
         self._save_results(gg, scene_cloud, intrinsic_matrix, factor_depth, self.output_dir)
 
