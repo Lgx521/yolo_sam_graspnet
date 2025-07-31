@@ -34,6 +34,8 @@ from collision_detector import ModelFreeCollisionDetector
 from data_utils import CameraInfo as GraspNetCameraInfo, create_point_cloud_from_depth_image
 from graspnetAPI import GraspGroup
 import open3d as o3d
+import scipy.io as scio
+
 
 # Import custom service definitions
 from kinova_graspnet_ros2.srv import DetectGrasps
@@ -253,6 +255,47 @@ class GraspDetectionService(Node):
         self.get_logger().info(f'Model loaded from: {self.checkpoint_path}')
         return net
     
+    def _save_grasp_results_for_offline_vis(self, cloud: o3d.geometry.PointCloud, grasps: GraspGroup, output_dir: str):
+        """
+        保存点云和最终的抓取结果，以便进行离线可视化。
+        """
+        try:
+            self.get_logger().info(f"Saving final results for offline visualization to '{output_dir}'...")
+            os.makedirs(output_dir, exist_ok=True)
+
+            # 1. 保存场景点云文件，命名为 scene.pcd
+            pcd_path = os.path.join(output_dir, 'scene.pcd')
+            o3d.io.write_point_cloud(pcd_path, cloud)
+            self.get_logger().info(f"-> Offline scene point cloud saved: {pcd_path}")
+
+            # 2. 从GraspGroup对象中提取数据，并保存为 grasp_results.mat
+            poses_list, scores_list, widths_list = [], [], []
+            for grasp in grasps:
+                # 构建 3x4 姿态矩阵 [R|t]
+                pose_matrix = np.hstack([grasp.rotation_matrix, grasp.translation.reshape(3, 1)])
+                poses_list.append(pose_matrix)
+                scores_list.append(grasp.score)
+                widths_list.append(grasp.width)
+            
+            if len(poses_list) > 0:
+                poses_array = np.stack(poses_list, axis=-1)
+            else:
+                poses_array = np.zeros((3, 4, 0)) # 如果没有抓取，则创建空数组
+
+            mat_data = {
+                'poses': poses_array.astype(np.float32),
+                'scores': np.array(scores_list, dtype=np.float32),
+                'widths': np.array(widths_list, dtype=np.float32),
+            }
+
+            mat_path = os.path.join(output_dir, 'grasp_results.mat')
+            scio.savemat(mat_path, mat_data)
+            self.get_logger().info(f"-> Offline grasp results saved: {mat_path}")
+
+        except Exception as e:
+            self.get_logger().warn(f"Failed to save offline grasp results: {e}")
+
+
     def get_transform_matrix(self, target_frame: str, source_frame: str) -> Optional[np.ndarray]:
         """Get transformation matrix from source_frame to target_frame"""
         try:
@@ -898,6 +941,12 @@ class GraspDetectionService(Node):
             # NMS and sorting - Re-enabled to reduce position variation
             filtered_grasps.nms()  # NMS filters out similar/overlapping grasps
             filtered_grasps.sort_by_score()
+
+            self._save_grasp_results_for_offline_vis(
+                cloud=o3d_cloud,
+                grasps=filtered_grasps,
+                output_dir="/tmp/graspnet_debug"
+            )
             
             # Get top grasps
             max_grasps = request.max_grasps if request.max_grasps > 0 else 10
