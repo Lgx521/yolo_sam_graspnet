@@ -15,6 +15,8 @@ import argparse
 import os
 import sys
 
+import matplotlib.cm as cm
+
 # --- 确保GraspNet相关模块在PYTHONPATH中 ---
 try:
     from graspnetAPI import GraspGroup
@@ -89,6 +91,8 @@ def main():
     parser = argparse.ArgumentParser(description="离线可视化GraspNet结果")
     parser.add_argument('--top_k', type=int, default=50,
                         help="最多显示前 K 个最佳抓取。")
+    parser.add_argument('--cmap', type=str, default='viridis',
+                        help="用于可视化分数的颜色映射表 (例如: viridis, plasma, jet)。")
     args = parser.parse_args()
 
     # 1. 构建文件路径
@@ -124,20 +128,43 @@ def main():
 
     print(f"成功加载 {len(gg)} 个抓取。正在准备可视化...")
 
-    # 5. 准备可视化
-    # 按分数排序并筛选前K个
+    # 5. 准备可视化 (这是修改的核心部分)
     gg.sort_by_score()
     gg_top_k = gg[:args.top_k]
     
-    # 获取抓取器的3D几何模型列表
-    grippers = gg_top_k.to_open3d_geometry_list()
+    # <--- MODIFICATION START --->
+    
+    # 5a. 计算归一化的抓取分数
+    scores = [g.score for g in gg_top_k]
+    # 使用所选的颜色映射表
+    cmap = cm.get_cmap(args.cmap) 
+
+    # 处理分数范围，以避免除以零的错误
+    min_score = min(scores) if scores else 0.0
+    max_score = max(scores) if scores else 1.0
+    if max_score == min_score:
+        # 如果所有分数都相同，则所有抓取都使用颜色映射表中的最热颜色
+        norm_scores = [1.0] * len(scores)
+    else:
+        norm_scores = [(s - min_score) / (max_score - min_score) for s in scores]
+
+    # 5b. 循环生成带有颜色映射的抓取器
+    grippers = []
+    for i, grasp in enumerate(gg_top_k):
+        # 从颜色映射表中获取颜色 (matplotlib返回RGBA, open3d需要RGB)
+        color = cmap(norm_scores[i])[:3]
+        # 为每个抓取器单独生成几何模型并指定颜色
+        grippers.append(grasp.to_open3d_geometry(color=color))
+
+    # <--- MODIFICATION END --->
 
     # 6. 启动可视化
-    print(f"正在显示点云和前 {len(grippers)} 个最佳抓取...")
+    print(f"正在显示点云和前 {len(grippers)} 个最佳抓取 (颜色代表分数)...")
     o3d.visualization.draw_geometries(
         [cloud, *grippers],
-        window_name=f"GraspNet Visualization "
+        window_name=f"GraspNet Visualization"
     )
+
 
 if __name__ == '__main__':
     main()

@@ -17,7 +17,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 import cv2
 from graspnetAPI import GraspGroup
-
+import matplotlib.cm as cm
 import os
 import sys
 import numpy as np
@@ -226,10 +226,38 @@ class GraspNetProcessorNode(Node):
         self.get_logger().info(f"-> .mat 结果文件已保存至: {mat_path}")
 
     def _vis_grasps(self, gg, cloud):
+        """
+        根据抓取分数使用颜色映射来可视化抓取。
+        """
         gg.nms()
         gg.sort_by_score()
-        gg = gg[:50]
-        grippers = gg.to_open3d_geometry_list()
+        gg_top_k = gg[:50] # 最多显示50个
+
+        # 如果没有抓取，则直接显示点云
+        if len(gg_top_k) == 0:
+            o3d.visualization.draw_geometries([cloud])
+            return
+
+        # 准备颜色映射
+        scores = [g.score for g in gg_top_k]
+        # 从self.cfgs中读取颜色映射表的名称
+        cmap = cm.get_cmap(self.cfgs.cmap) 
+
+        # 归一化分数
+        min_score = min(scores)
+        max_score = max(scores)
+        if max_score == min_score:
+            norm_scores = [1.0] * len(scores)
+        else:
+            norm_scores = [(s - min_score) / (max_score - min_score) for s in scores]
+
+        # 为每个抓取创建带颜色的几何模型
+        grippers = []
+        for i, grasp in enumerate(gg_top_k):
+            # 将归一化的分数映射到颜色
+            color = cmap(norm_scores[i])[:3] # 取RGB部分，忽略Alpha
+            grippers.append(grasp.to_open3d_geometry(color=color))
+
         o3d.visualization.draw_geometries([cloud, *grippers])
 
     def shutdown(self):
@@ -245,6 +273,8 @@ def main():
     parser.add_argument('--num_view', type=int, default=300, help='视角数量')
     parser.add_argument('--collision_thresh', type=float, default=0.01, help='碰撞检测阈值')
     parser.add_argument('--voxel_size', type=float, default=0.01, help='体素大小')
+    parser.add_argument('--cmap', type=str, default='viridis',
+                        help="用于可视化分数的颜色映射表 (例如: viridis, plasma, jet)。")
     # parser.add_argument('--output_dir', type=str, default='graspnet_ros_output', help='保存结果的目录')
     
     # 解析参数
