@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from datetime import datetime
 import os
 import sys
 # Add graspnet-baseline to Python path
@@ -35,6 +36,9 @@ from data_utils import CameraInfo as GraspNetCameraInfo, create_point_cloud_from
 from graspnetAPI import GraspGroup
 import open3d as o3d
 import scipy.io as scio
+
+
+formatted_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
 # Import custom service definitions
@@ -457,7 +461,7 @@ class GraspDetectionService(Node):
             
             # 保存中间结果用于调试
             try:
-                debug_dir = "/tmp/graspnet_debug"
+                debug_dir = "/tmp/graspnet_debug"+ f"/segmentation_{formatted_time}"
                 os.makedirs(debug_dir, exist_ok=True)
                 
                 # 保存调整大小前的掩码（如果有的话）
@@ -473,7 +477,7 @@ class GraspDetectionService(Node):
             
             # Save debug images for analysis
             try:
-                debug_dir = "/tmp/graspnet_debug"
+                debug_dir = "/tmp/graspnet_debug"+ f"/segmentation_{formatted_time}"
                 import os
                 os.makedirs(debug_dir, exist_ok=True)
                 
@@ -901,6 +905,9 @@ class GraspDetectionService(Node):
     def detect_grasps_callback(self, request: DetectGrasps.Request, response: DetectGrasps.Response):
         """Service callback for grasp detection"""
         self.get_logger().info('DEBUG: === GRASP DETECTION CALLBACK STARTED ===')
+
+        global formatted_time
+        formatted_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         try:
             start_time = time.time()
@@ -945,7 +952,7 @@ class GraspDetectionService(Node):
             self._save_grasp_results_for_offline_vis(
                 cloud=o3d_cloud,
                 grasps=filtered_grasps,
-                output_dir="/tmp/graspnet_debug"
+                output_dir="/tmp/graspnet_debug"+ f"/segmentation_{formatted_time}"
             )
             
             # Get top grasps
@@ -970,31 +977,56 @@ class GraspDetectionService(Node):
             from scipy.spatial.transform import Rotation as R
 
             graspnet_to_tf_rotation = np.array([
-                [1,  0,  0],   
-                [0,  1,  0],   
-                [0,  0,  1]    
+                [0,  0,  1],   
+                [-1,  0,  0],   
+                [0,  -1,  0]    
             ])
 
-            # 构建4x4齐次变换矩阵（坐标系变换，只有旋转，无平移）
-            graspnet_to_tf_transform = np.eye(4)
-            graspnet_to_tf_transform[:3, :3] = graspnet_to_tf_rotation
-            graspnet_to_tf_transform[:3, 3] = [0, 0, 0]  # 原点重合，无平移
+            # # 构建4x4齐次变换矩阵（坐标系变换，只有旋转，无平移）
+            # graspnet_to_tf_transform = np.eye(4)
+            # graspnet_to_tf_transform[:3, :3] = graspnet_to_tf_rotation
+            # graspnet_to_tf_transform[:3, 3] = [0, 0, 0]  # 原点重合，无平移
+
+
+            # graspnet_to_tf_transform = np.array([
+            #     [0,  0,  1, 0],   # GraspNet X (approach) -> TF Z
+            #     [1,  0,  0, 0],   # GraspNet Y (gripper open) -> TF X
+            #     [0,  1,  0, 0],   # GraspNet Z (up) -> TF Y
+            #     [0,  0,  0, 1]    # 齐次变换矩阵的最后一行
+            # ])
             
             self.get_logger().info('Applying GraspNet to TF coordinate system transformation using homogeneous matrices')
             
             for i in range(len(translations)):
                 # ===== 齐次变换矩阵坐标系转换 =====
+
                 # 构建GraspNet坐标系中的抓取齐次变换矩阵
-                grasp_transform_graspnet = np.eye(4)
-                grasp_transform_graspnet[:3, :3] = rotation_matrices[i]  # 旋转部分
-                grasp_transform_graspnet[:3, 3] = [translations[i][0], translations[i][1], translations[i][2]]  # 平移部分
+                # grasp_transform_graspnet = np.eye(4)
+                # grasp_transform_graspnet[:3, :3] = rotation_matrices[i]  # 旋转部分
+                # grasp_transform_graspnet[:3, 3] = [translations[i][0], translations[i][1], translations[i][2]]  # 平移部分
                 
                 # 坐标系变换：左乘变换矩阵
-                grasp_transform_tf = graspnet_to_tf_transform @ grasp_transform_graspnet
-                
+                # grasp_transform_tf = graspnet_to_tf_transform @ grasp_transform_graspnet
+
+                # # 提取转换后的位置和姿态
+                # pos_tf_camera = grasp_transform_tf[:3, 3]
+                # rot_matrix_tf_camera = grasp_transform_tf[:3, :3]
+
+
+                ###################################MODIFIED CODE START###################################
+                rotation_matrix_rotated = graspnet_to_tf_rotation @ rotation_matrices  # First we rotate
+
+                # 构建GraspNet坐标系中的抓取齐次变换矩阵
+                grasp_transform_graspnet = np.eye(4)
+                grasp_transform_graspnet[:3, :3] = rotation_matrix_rotated[i]  # 旋转部分
+                grasp_transform_graspnet[:3, 3] = [translations[i][0], translations[i][1], translations[i][2]]  # 平移部分
+
                 # 提取转换后的位置和姿态
-                pos_tf_camera = grasp_transform_tf[:3, 3]
-                rot_matrix_tf_camera = grasp_transform_tf[:3, :3]
+                pos_tf_camera = [translations[i][0], translations[i][1], translations[i][2]]
+                rot_matrix_tf_camera = rotation_matrix_rotated
+                ###################################MODIFIED CODE END###################################
+                
+
                 
                 # 构建ROS消息
                 pose_msg = PoseStamped()
@@ -1109,7 +1141,7 @@ class GraspDetectionService(Node):
                     
                     # 保存可视化图像用于调试
                     import cv2
-                    cv2.imwrite('/tmp/graspnet_debug/grasp_visualization.png', vis_image)
+                    cv2.imwrite(f'/tmp/graspnet_debug/segmentation_{formatted_time}/grasp_visualization.png', vis_image)
                     self.get_logger().info('Saved grasp visualization to /tmp/graspnet_debug/grasp_visualization.png')
                     
                     # 确保图像是BGR格式（OpenCV默认）
