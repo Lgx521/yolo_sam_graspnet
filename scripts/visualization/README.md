@@ -25,7 +25,7 @@
 
 ## 脚本详解
 
-### 1. `run_and_save_graspnet.py` - 实时处理与保存
+### 1. `visualization.py` - 实时处理与保存
 
 这个是**主脚本**，用于执行从数据捕获到结果保存的全过程。
 
@@ -58,7 +58,7 @@ python run_and_save_graspnet.py --checkpoint_path /path/to/your/checkpoint-rs.ta
 *   `scene.pcd`: 在该场景中检测时使用的点云。
 *   `grasp_results.mat`: 一个包含所有抓取姿态、分数和宽度的MATLAB文件。
 
-### 2. `visualize_saved_results.py` - 离线结果可视化
+### 2. `offline_visualization.py` - 离线结果可视化
 
 当您想**回顾或演示**之前保存的结果时，使用此脚本。它**不需要ROS或神经网络**，运行速度非常快。
 
@@ -70,11 +70,8 @@ python run_and_save_graspnet.py --checkpoint_path /path/to/your/checkpoint-rs.ta
 
 #### **如何使用**
 
-向脚本提供您想要可视化的结果目录的路径。
-
-```bash
-python visualize_saved_results.py ./my_capture_01
-```
+Copy this script to specific output folder which contains `grasp_results.mat` and `scene.pcd`  
+Then run this script.
 
 您可以指定只显示分数最高的前K个抓取：
 
