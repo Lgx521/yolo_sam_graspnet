@@ -87,7 +87,10 @@ class GraspNetProcessorNode(Node):
                 cylinder_radius=0.05, hmin=-0.02, hmax_list=[0.01,0.02,0.03,0.04], is_training=False)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         net.to(device)
-        path = "graspnet-baseline/checkpoint-rs.tar"
+
+        script_path = os.path.realpath(__file__)
+        folder_path = os.path.dirname(script_path)
+        path = os.path.join(folder_path, "checkpoint-rs.tar")
         checkpoint = torch.load(path)
         net.load_state_dict(checkpoint['model_state_dict'])
         start_epoch = checkpoint['epoch']
