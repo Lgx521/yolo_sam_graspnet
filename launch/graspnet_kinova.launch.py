@@ -87,7 +87,10 @@ def generate_launch_description():
         ]
     )
     
-    # Coordinate transformer node
+    # # Coordinate transformer node
+    '''
+    Find wheather this is wrong or not
+    '''
     coordinate_transformer_node = Node(
         package='kinova_graspnet_ros2',
         executable='coordinate_transformer.py',
@@ -97,7 +100,7 @@ def generate_launch_description():
             'use_sim_time': use_sim_time,
             'publish_static_transforms': False,
             # Example hand-eye calibration values - replace with actual calibration
-            'camera_to_ee_translation': [0.05, 0.0, 0.1],
+            'camera_to_ee_translation': [0, 0.05639, -0.00305],
             'camera_to_ee_rotation': [0.0, 0.0, 0.0, 1.0]  # quaternion [x,y,z,w]
         }]
     )
@@ -130,6 +133,9 @@ def generate_launch_description():
     )
     
     # Real-time YOLO detection node
+    '''
+    DISABLED
+    '''
     yolo_detection_node = Node(
         package='kinova_graspnet_ros2',
         executable='yolo_detection_node.py',
@@ -168,6 +174,6 @@ def generate_launch_description():
     ld.add_action(coordinate_transformer_node)
     ld.add_action(grasp_visualizer_node)
     ld.add_action(grasp_center_publisher_node)
-    ld.add_action(yolo_detection_node)
+    # ld.add_action(yolo_detection_node)
     
     return ld
