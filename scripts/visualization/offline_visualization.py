@@ -87,19 +87,20 @@ def load_and_convert_grasps(mat_path):
 
 def main():
     parser = argparse.ArgumentParser(description="离线可视化GraspNet结果")
-    parser.add_argument('results_dir', type=str,
-                        help="包含 'scene.pcd' 和 'grasp_results.mat' 的结果目录的路径。")
     parser.add_argument('--top_k', type=int, default=50,
                         help="最多显示前 K 个最佳抓取。")
     args = parser.parse_args()
 
     # 1. 构建文件路径
-    pcd_path = os.path.join(args.results_dir, 'scene.pcd')
-    mat_path = os.path.join(args.results_dir, 'grasp_results.mat')
+    script_path = os.path.abspath(__file__)
+    folder_path = os.path.dirname(script_path)
+
+    pcd_path= folder_path + '/scene.pcd'
+    mat_path= folder_path + '/grasp_results.mat'
 
     # 2. 检查文件是否存在
     if not os.path.exists(pcd_path) or not os.path.exists(mat_path):
-        print(f"\n错误: 在目录 '{args.results_dir}' 中未找到所需文件。")
+        # print(f"\n错误: 在目录 '{args.results_dir}' 中未找到所需文件。")
         print(f"请确保 '{pcd_path}' 和 '{mat_path}' 都存在。\n")
         sys.exit(1)
 
@@ -135,7 +136,7 @@ def main():
     print(f"正在显示点云和前 {len(grippers)} 个最佳抓取...")
     o3d.visualization.draw_geometries(
         [cloud, *grippers],
-        window_name=f"GraspNet Visualization - {os.path.basename(args.results_dir)}"
+        window_name=f"GraspNet Visualization "
     )
 
 if __name__ == '__main__':
