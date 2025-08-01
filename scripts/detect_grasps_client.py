@@ -91,11 +91,11 @@ class DetectGraspsClient(Node):
             
             # 使用不同的表情符号来区分排名
             if i == 0:
-                rank = "🥇#1"
+                rank = "#1"
             elif i == 1:
-                rank = "🥈#2"
+                rank = "#2"
             elif i == 2:
-                rank = "🥉#3"
+                rank = "#3"
             else:
                 rank = f"  #{i+1}"
             
