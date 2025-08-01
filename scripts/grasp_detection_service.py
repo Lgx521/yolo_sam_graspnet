@@ -977,9 +977,9 @@ class GraspDetectionService(Node):
             from scipy.spatial.transform import Rotation as R
 
             graspnet_to_tf_rotation = np.array([
-                [0,  0,  1],   
-                [-1,  0,  0],   
-                [0,  -1,  0]    
+                [0,   0,  -1],   
+                [-1,  0,   0],   
+                [0,   1,   0]    
             ])
 
             # # 构建4x4齐次变换矩阵（坐标系变换，只有旋转，无平移）
@@ -1022,11 +1022,10 @@ class GraspDetectionService(Node):
                 grasp_transform_graspnet[:3, 3] = [translations[i][0], translations[i][1], translations[i][2]]  # 平移部分
 
                 # 提取转换后的位置和姿态
-                pos_tf_camera = [translations[i][0], translations[i][1], translations[i][2]]
-                rot_matrix_tf_camera = rotation_matrix_rotated
+                pos_tf_camera = grasp_transform_graspnet[:3, 3]
+                rot_matrix_tf_camera = grasp_transform_graspnet[:3, :3] 
                 ###################################MODIFIED CODE END###################################
                 
-
                 
                 # 构建ROS消息
                 pose_msg = PoseStamped()
@@ -1041,12 +1040,13 @@ class GraspDetectionService(Node):
                 # 设置转换后的方向（旋转矩阵转四元数）
                 rotation = R.from_matrix(rot_matrix_tf_camera)
                 quat = rotation.as_quat()  # [x, y, z, w]
-                
+                # self.get_logger().info(quat)
+
                 pose_msg.pose.orientation.x = quat[0]
                 pose_msg.pose.orientation.y = quat[1]
                 pose_msg.pose.orientation.z = quat[2]
                 pose_msg.pose.orientation.w = quat[3]
-                
+
                 response.grasp_poses.append(pose_msg)
                 
                 # Grasp properties

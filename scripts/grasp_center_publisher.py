@@ -28,7 +28,7 @@ class GraspCenterPublisher(Node):
         self.declare_parameter('left_finger_frame', 'robotiq_85_left_finger_tip_link')
         self.declare_parameter('right_finger_frame', 'robotiq_85_right_finger_tip_link')
         self.declare_parameter('grasp_center_frame', 'grasp_center')
-        self.declare_parameter('z_offset', 0.03)  # 3cm offset along Z axis
+        self.declare_parameter('z_offset', 0.02)  # 1.5cm offset along Z axis
         self.declare_parameter('publish_rate', 50.0)  # Hz
         
         # Get parameters

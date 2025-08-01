@@ -127,7 +127,7 @@ def generate_launch_description():
             'left_finger_frame': 'robotiq_85_left_finger_tip_link',
             'right_finger_frame': 'robotiq_85_right_finger_tip_link',
             'grasp_center_frame': 'grasp_center',
-            'z_offset': 0.03,  # 3cm offset along Z axis
+            'z_offset': 0.02,  # 3cm offset along Z axis
             'publish_rate': 50.0
         }]
     )
