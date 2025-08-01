@@ -44,7 +44,7 @@ from cv_segmentation import segment_objects
 
 # Import custom service definitions
 from kinova_graspnet_ros2.srv import DetectGrasps
-from visualization_msgs.msg import MarkerArray, Marker
+# from visualization_msgs.msg import MarkerArray, Marker
 from geometry_msgs.msg import Pose, Point, Quaternion
 
 
@@ -181,11 +181,11 @@ class GraspDetectionService(Node):
         )
         
         # Initialize visualization publishers
-        self.grasp_marker_pub = self.create_publisher(
-            MarkerArray,
-            'grasp_markers',
-            10
-        )
+        # self.grasp_marker_pub = self.create_publisher(
+        #     MarkerArray,
+        #     'grasp_markers',
+        #     10
+        # )
         
         self.debug_image_pub = self.create_publisher(
             Image,
@@ -401,7 +401,8 @@ class GraspDetectionService(Node):
                 target_class=target_class,
                 interactive=False,  # No interaction in service mode
                 output_path=None,
-                return_vis=True  # Get YOLO visualization
+                return_vis=True,  # Get YOLO visualization
+                device=str(self.device) # 传递 'cuda' 或 'cpu'
             )
             self.get_logger().info('--- 分割函数已返回 ---')
 
@@ -704,7 +705,43 @@ class GraspDetectionService(Node):
     #         zip(top_grasps.translations, top_grasps.rotation_matrices, 
     #             top_grasps.widths, top_grasps.scores)):
             
-    #         if i >= len(colors):
+    #         if i >= len(colors):tered_grasps) > 0 and color_image is not None and depth_image is not None:
+            #     try:
+            #         # 先将ROS图像消息转换为numpy数组
+            #         if hasattr(color_image, 'data'):  # 是ROS消息
+            #             color_np = self.bridge.imgmsg_to_cv2(color_image, desired_encoding='rgb8')
+            #             depth_np = self.bridge.imgmsg_to_cv2(depth_image, desired_encoding='passthrough')
+            #         else:  # 已经是numpy数组
+            #             color_np = color_image
+            #             depth_np = depth_image
+                        
+            #         # 在RGB图像上绘制抓取 - 根据深度图像是否对齐选择内参
+            #         # 如果深度图像已对齐到RGB（尺寸相同），使用RGB内参；否则使用深度内参
+            #         camera_intrinsics = (self.rgb_camera_params if depth_np.shape == color_np.shape[:2] 
+            #                             else self.depth_camera_params)
+                    
+            #         vis_image = self.visualize_grasps_on_image(
+            #             color_np, filtered_grasps, depth_np, camera_intrinsics
+            #         )
+                    
+            #         # 保存可视化图像用于调试
+            #         import cv2
+            #         cv2.imwrite(f'/tmp/graspnet_debug/segmentation_{timestamp_str}/grasp_visualization.png', vis_image)
+            #         self.get_logger().info('Saved grasp visualization to /tmp/graspnet_debug/grasp_visualization.png')
+                    
+            #         # 确保图像是BGR格式（OpenCV默认）
+            #         if len(vis_image.shape) == 3 and vis_image.shape[2] == 3:
+            #             # 从RGB转换为BGR用于cv2显示
+            #             vis_image_bgr = cv2.cvtColor(vis_image, cv2.COLOR_RGB2BGR)
+            #         else:
+            #             vis_image_bgr = vis_image
+            #         vis_msg = self.bridge.cv2_to_imgmsg(vis_image_bgr, 'bgr8')
+            #         vis_msg.header.stamp = self.get_clock().now().to_msg()
+            #         vis_msg.header.frame_id = self.rgb_camera_frame
+            #         self.debug_image_pub.publish(vis_msg)
+            #         self.get_logger().info('Published visualization image')
+            #     except Exception as e:
+            #         self.get
     #             break
                 
     #         color = colors[i]
@@ -1112,55 +1149,56 @@ class GraspDetectionService(Node):
             self.get_logger().info(f'Debug: response.grasp_poses length = {len(response.grasp_poses)}')
             
             # 发布RViz标记（始终尝试发布，不依赖图像数据）
-            if len(filtered_grasps) > 0:
-                try:
-                    self.get_logger().info(f'Attempting to publish {len(filtered_grasps)} grasp markers')
-                    self.publish_grasp_markers(filtered_grasps, self.depth_camera_frame)
-                    self.get_logger().info('Successfully published grasp markers')
-                except Exception as e:
-                    self.get_logger().error(f'Failed to publish grasp markers: {e}')
-                    import traceback
-                    self.get_logger().error(f'Traceback: {traceback.format_exc()}')
-            else:
-                self.get_logger().warn('No filtered grasps to publish')
+            # if len(filtered_grasps) > 0:
+            #     try:
+            #         self.get_logger().info(f'Attempting to publish {len(filtered_grasps)} grasp markers')
+            #         self.publish_grasp_markers(filtered_grasps, self.depth_camera_frame)
+            #         self.get_logger().info('Successfully published grasp markers')
+            #     except Exception as e:
+            #         self.get_logger().error(f'Failed to publish grasp markers: {e}')
+            #         import traceback
+            #         self.get_logger().error(f'Traceback: {traceback.format_exc()}')
+            # else:
+            #     self.get_logger().warn('No filtered grasps to publish')
             
             # 发布图像可视化（仅在有图像数据时）
-            if len(filtered_grasps) > 0 and color_image is not None and depth_image is not None:
-                try:
-                    # 先将ROS图像消息转换为numpy数组
-                    if hasattr(color_image, 'data'):  # 是ROS消息
-                        color_np = self.bridge.imgmsg_to_cv2(color_image, desired_encoding='rgb8')
-                        depth_np = self.bridge.imgmsg_to_cv2(depth_image, desired_encoding='passthrough')
-                    else:  # 已经是numpy数组
-                        color_np = color_image
-                        depth_np = depth_image
+            # if len(filtered_grasps) > 0 and color_image is not None and depth_image is not None:
+            #     try:
+            #         # 先将ROS图像消息转换为numpy数组
+            #         if hasattr(color_image, 'data'):  # 是ROS消息
+            #             color_np = self.bridge.imgmsg_to_cv2(color_image, desired_encoding='rgb8')
+            #             depth_np = self.bridge.imgmsg_to_cv2(depth_image, desired_encoding='passthrough')
+            #         else:  # 已经是numpy数组
+            #             color_np = color_image
+            #             depth_np = depth_image
                         
-                    # 在RGB图像上绘制抓取 - 根据深度图像是否对齐选择内参
-                    # 如果深度图像已对齐到RGB（尺寸相同），使用RGB内参；否则使用深度内参
-                    camera_intrinsics = (self.rgb_camera_params if depth_np.shape == color_np.shape[:2] 
-                                        else self.depth_camera_params)
-                    vis_image = self.visualize_grasps_on_image(
-                        color_np, filtered_grasps, depth_np, camera_intrinsics
-                    )
+            #         # 在RGB图像上绘制抓取 - 根据深度图像是否对齐选择内参
+            #         # 如果深度图像已对齐到RGB（尺寸相同），使用RGB内参；否则使用深度内参
+            #         camera_intrinsics = (self.rgb_camera_params if depth_np.shape == color_np.shape[:2] 
+            #                             else self.depth_camera_params)
                     
-                    # 保存可视化图像用于调试
-                    import cv2
-                    cv2.imwrite(f'/tmp/graspnet_debug/segmentation_{timestamp_str}/grasp_visualization.png', vis_image)
-                    self.get_logger().info('Saved grasp visualization to /tmp/graspnet_debug/grasp_visualization.png')
+            #         vis_image = self.visualize_grasps_on_image(
+            #             color_np, filtered_grasps, depth_np, camera_intrinsics
+            #         )
                     
-                    # 确保图像是BGR格式（OpenCV默认）
-                    if len(vis_image.shape) == 3 and vis_image.shape[2] == 3:
-                        # 从RGB转换为BGR用于cv2显示
-                        vis_image_bgr = cv2.cvtColor(vis_image, cv2.COLOR_RGB2BGR)
-                    else:
-                        vis_image_bgr = vis_image
-                    vis_msg = self.bridge.cv2_to_imgmsg(vis_image_bgr, 'bgr8')
-                    vis_msg.header.stamp = self.get_clock().now().to_msg()
-                    vis_msg.header.frame_id = self.rgb_camera_frame
-                    self.debug_image_pub.publish(vis_msg)
-                    self.get_logger().info('Published visualization image')
-                except Exception as e:
-                    self.get_logger().warn(f'Failed to publish visualization image: {e}')
+            #         # 保存可视化图像用于调试
+            #         import cv2
+            #         cv2.imwrite(f'/tmp/graspnet_debug/segmentation_{timestamp_str}/grasp_visualization.png', vis_image)
+            #         self.get_logger().info('Saved grasp visualization to /tmp/graspnet_debug/grasp_visualization.png')
+                    
+            #         # 确保图像是BGR格式（OpenCV默认）
+            #         if len(vis_image.shape) == 3 and vis_image.shape[2] == 3:
+            #             # 从RGB转换为BGR用于cv2显示
+            #             vis_image_bgr = cv2.cvtColor(vis_image, cv2.COLOR_RGB2BGR)
+            #         else:
+            #             vis_image_bgr = vis_image
+            #         vis_msg = self.bridge.cv2_to_imgmsg(vis_image_bgr, 'bgr8')
+            #         vis_msg.header.stamp = self.get_clock().now().to_msg()
+            #         vis_msg.header.frame_id = self.rgb_camera_frame
+            #         self.debug_image_pub.publish(vis_msg)
+            #         self.get_logger().info('Published visualization image')
+            #     except Exception as e:
+            #         self.get_logger().warn(f'Failed to publish visualization image: {e}')
             
             # 简化的节点日志输出
             self.get_logger().info(f'Grasp detection completed: {len(response.grasp_poses)} grasps in {response.inference_time:.3f}s')

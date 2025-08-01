@@ -237,12 +237,19 @@ class SmartSegmentation:
 # 全局分割器实例
 _global_segmenter = None
 
+# def get_segmenter(device=None):
+#     """获取全局分割器实例"""
+#     global _global_segmenter
+#     if _global_segmenter is None:
+#         _global_segmenter = SmartSegmentation(device=device)
+#     return _global_segmenter
 def get_segmenter(device=None):
-    """获取全局分割器实例"""
-    global _global_segmenter
-    if _global_segmenter is None:
-        _global_segmenter = SmartSegmentation(device=device)
-    return _global_segmenter
+    """
+    获取一个全新的分割器实例。
+    已禁用单例模式以避免YOLO模型的状态污染问题。
+    """
+    # 每次都创建一个全新的对象，这样内部的YOLO模型也是全新的。
+    return SmartSegmentation(device=device)
 
 
 def segment_objects(image, target_class=None, interactive=True, output_path='mask.png', return_vis=False, device=None):
