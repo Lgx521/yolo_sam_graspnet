@@ -23,7 +23,7 @@ from ultralytics.models.sam import Predictor as SAMPredictor
 class SmartSegmentation:
     """智能分割类 - 集成YOLO和SAM"""
     
-    def __init__(self, sam_model='sam_b.pt', yolo_model='yolov8s-world.pt'):
+    def __init__(self, sam_model='sam_b.pt', yolo_model='yolov8s-world.pt', device=None):
         """
         初始化分割模型
         
@@ -35,6 +35,11 @@ class SmartSegmentation:
         self.yolo_model_path = yolo_model
         self._sam_predictor = None
         self._yolo_model = None
+
+        if device is None:
+            self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        else:
+            self.device = device
         
     def _init_sam(self):
         """延迟初始化SAM模型"""
@@ -52,7 +57,7 @@ class SmartSegmentation:
     def _init_yolo(self):
         """延迟初始化YOLO模型"""
         if self._yolo_model is None:
-            self._yolo_model = YOLO(self.yolo_model_path)
+            self._yolo_model = YOLO(self.yolo_model_path).to(self.device)
         return self._yolo_model
     
     def detect_objects(self, image, target_class=None, conf_threshold=0.25):
@@ -232,15 +237,15 @@ class SmartSegmentation:
 # 全局分割器实例
 _global_segmenter = None
 
-def get_segmenter():
+def get_segmenter(device=None):
     """获取全局分割器实例"""
     global _global_segmenter
     if _global_segmenter is None:
-        _global_segmenter = SmartSegmentation()
+        _global_segmenter = SmartSegmentation(device=device)
     return _global_segmenter
 
 
-def segment_objects(image, target_class=None, interactive=True, output_path='mask.png', return_vis=False):
+def segment_objects(image, target_class=None, interactive=True, output_path='mask.png', return_vis=False, device=None):
     """
     便捷函数：物体分割
     
@@ -255,7 +260,7 @@ def segment_objects(image, target_class=None, interactive=True, output_path='mas
         numpy.ndarray: 分割掩码
         numpy.ndarray: YOLO检测可视化图像 (如果return_vis=True)
     """
-    segmenter = get_segmenter()
+    segmenter = get_segmenter(device=device)
     return segmenter.segment_objects(image, target_class, interactive, output_path, return_vis)
 
 

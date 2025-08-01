@@ -38,7 +38,8 @@ import open3d as o3d
 import scipy.io as scio
 
 
-formatted_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+sys.path.append('/home/roar/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils') 
+from cv_segmentation import segment_objects
 
 
 # Import custom service definitions
@@ -333,6 +334,7 @@ class GraspDetectionService(Node):
                          color_msg: Image,
                          depth_msg: Image,
                          camera_info: CameraInfo,
+                         timestamp_str: str,
                          workspace_min: Optional[Point] = None,
                          workspace_max: Optional[Point] = None,
                          target_object_class: Optional[str] = None) -> Tuple[torch.Tensor, o3d.geometry.PointCloud]:
@@ -382,11 +384,6 @@ class GraspDetectionService(Node):
             # project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             # sys.path.append(os.path.join(project_root, 'utils'))
 
-            sys.path.append('/home/roar/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils')
-
-        
-            from cv_segmentation import segment_objects
-
             
             # Determine target object class
             target_class = target_object_class if target_object_class else self.default_target_object_class
@@ -397,7 +394,8 @@ class GraspDetectionService(Node):
                 self.get_logger().info(f'Using intelligent segmentation for object: {target_class}')
             else:
                 self.get_logger().info('Using intelligent segmentation for all objects')
-                
+            
+            self.get_logger().info('--- 准备调用分割函数 ---')
             segmentation_result = segment_objects(
                 color_image,
                 target_class=target_class,
@@ -405,6 +403,12 @@ class GraspDetectionService(Node):
                 output_path=None,
                 return_vis=True  # Get YOLO visualization
             )
+            self.get_logger().info('--- 分割函数已返回 ---')
+
+            if segmentation_result is None:
+                self.get_logger().error('!!!!!! 分割结果为 None !!!!!!')
+                # 为了防止程序崩溃，如果返回None，我们创建一个全黑的掩码作为后备
+                segmentation_mask = np.zeros(color_image.shape[:2], dtype=np.uint8)
             
             # Handle return value based on whether visualization was requested
             if isinstance(segmentation_result, tuple):
@@ -461,7 +465,7 @@ class GraspDetectionService(Node):
             
             # 保存中间结果用于调试
             try:
-                debug_dir = "/tmp/graspnet_debug"+ f"/segmentation_{formatted_time}"
+                debug_dir = "/tmp/graspnet_debug"+ f"/segmentation_{timestamp_str}"
                 os.makedirs(debug_dir, exist_ok=True)
                 
                 # 保存调整大小前的掩码（如果有的话）
@@ -477,7 +481,7 @@ class GraspDetectionService(Node):
             
             # Save debug images for analysis
             try:
-                debug_dir = "/tmp/graspnet_debug"+ f"/segmentation_{formatted_time}"
+                debug_dir = "/tmp/graspnet_debug"+ f"/segmentation_{timestamp_str}"
                 import os
                 os.makedirs(debug_dir, exist_ok=True)
                 
@@ -662,252 +666,251 @@ class GraspDetectionService(Node):
             # Only request data available
             return False
     
-    def visualize_grasps_on_image(self, color_image: np.ndarray, grasp_group: GraspGroup, 
-                                 depth_image: np.ndarray, camera_intrinsics: dict) -> np.ndarray:
-        """
-        在RGB图像上可视化抓取姿态
+    # def visualize_grasps_on_image(self, color_image: np.ndarray, grasp_group: GraspGroup, 
+    #                              depth_image: np.ndarray, camera_intrinsics: dict) -> np.ndarray:
+    #     """
+    #     在RGB图像上可视化抓取姿态
         
-        Args:
-            color_image: RGB图像
-            grasp_group: GraspNet推理得到的抓取组
-            depth_image: 深度图像
-            camera_intrinsics: 相机内参
+    #     Args:
+    #         color_image: RGB图像
+    #         grasp_group: GraspNet推理得到的抓取组
+    #         depth_image: 深度图像
+    #         camera_intrinsics: 相机内参
             
-        Returns:
-            带有抓取可视化的图像
-        """
-        import cv2
-        vis_image = color_image.copy()
+    #     Returns:
+    #         带有抓取可视化的图像
+    #     """
+    #     import cv2
+    #     vis_image = color_image.copy()
         
-        if len(grasp_group) == 0:
-            return vis_image
+    #     if len(grasp_group) == 0:
+    #         return vis_image
             
-        # 获取前几个最好的抓取
-        top_grasps = grasp_group.nms().sort_by_score()[:5]
+    #     # 获取前几个最好的抓取
+    #     top_grasps = grasp_group.nms().sort_by_score()[:5]
         
-        fx, fy = camera_intrinsics['fx'], camera_intrinsics['fy']
-        cx, cy = camera_intrinsics['cx'], camera_intrinsics['cy']
+    #     fx, fy = camera_intrinsics['fx'], camera_intrinsics['fy']
+    #     cx, cy = camera_intrinsics['cx'], camera_intrinsics['cy']
         
-        colors = [
-            (0, 255, 0),    # 绿色 - 最佳
-            (0, 255, 255),  # 黄色
-            (255, 255, 0),  # 青色  
-            (255, 0, 255),  # 品红
-            (255, 0, 0),    # 红色
-        ]
+    #     colors = [
+    #         (0, 255, 0),    # 绿色 - 最佳
+    #         (0, 255, 255),  # 黄色
+    #         (255, 255, 0),  # 青色  
+    #         (255, 0, 255),  # 品红
+    #         (255, 0, 0),    # 红色
+    #     ]
         
-        for i, (translation, rotation_matrix, width, score) in enumerate(
-            zip(top_grasps.translations, top_grasps.rotation_matrices, 
-                top_grasps.widths, top_grasps.scores)):
+    #     for i, (translation, rotation_matrix, width, score) in enumerate(
+    #         zip(top_grasps.translations, top_grasps.rotation_matrices, 
+    #             top_grasps.widths, top_grasps.scores)):
             
-            if i >= len(colors):
-                break
+    #         if i >= len(colors):
+    #             break
                 
-            color = colors[i]
+    #         color = colors[i]
             
-            # 将3D抓取点投影到图像上
-            if translation[2] > 0:  # 确保在相机前方
-                u = int(fx * translation[0] / translation[2] + cx)
-                v = int(fy * translation[1] / translation[2] + cy)
+    #         # 将3D抓取点投影到图像上
+    #         if translation[2] > 0:  # 确保在相机前方
+    #             u = int(fx * translation[0] / translation[2] + cx)
+    #             v = int(fy * translation[1] / translation[2] + cy)
                 
-                if 0 <= u < vis_image.shape[1] and 0 <= v < vis_image.shape[0]:
-                    # 绘制抓取中心点
-                    cv2.circle(vis_image, (u, v), 8, color, -1)
+    #             if 0 <= u < vis_image.shape[1] and 0 <= v < vis_image.shape[0]:
+    #                 # 绘制抓取中心点
+    #                 cv2.circle(vis_image, (u, v), 8, color, -1)
                     
-                    # 绘制抓取方向 (从旋转矩阵提取方向)
-                    approach_vector = rotation_matrix[:, 2]  # Z轴为接近方向
-                    gripper_direction = rotation_matrix[:, 1]  # Y轴为夹爪张开方向
+    #                 # 绘制抓取方向 (从旋转矩阵提取方向)
+    #                 approach_vector = rotation_matrix[:, 2]  # Z轴为接近方向
+    #                 gripper_direction = rotation_matrix[:, 1]  # Y轴为夹爪张开方向
                     
-                    # 投影抓取接近方向
-                    approach_3d = translation + approach_vector * 0.05
-                    if approach_3d[2] > 0:
-                        u_approach = int(fx * approach_3d[0] / approach_3d[2] + cx)
-                        v_approach = int(fy * approach_3d[1] / approach_3d[2] + cy)
-                        cv2.arrowedLine(vis_image, (u, v), (u_approach, v_approach), color, 3)
+    #                 # 投影抓取接近方向
+    #                 approach_3d = translation + approach_vector * 0.05
+    #                 if approach_3d[2] > 0:
+    #                     u_approach = int(fx * approach_3d[0] / approach_3d[2] + cx)
+    #                     v_approach = int(fy * approach_3d[1] / approach_3d[2] + cy)
+    #                     cv2.arrowedLine(vis_image, (u, v), (u_approach, v_approach), color, 3)
                     
-                    # 绘制夹爪张开方向
-                    width_scale = width * 0.5
-                    left_3d = translation + gripper_direction * width_scale
-                    right_3d = translation - gripper_direction * width_scale
+    #                 # 绘制夹爪张开方向
+    #                 width_scale = width * 0.5
+    #                 left_3d = translation + gripper_direction * width_scale
+    #                 right_3d = translation - gripper_direction * width_scale
                     
-                    if left_3d[2] > 0 and right_3d[2] > 0:
-                        u_left = int(fx * left_3d[0] / left_3d[2] + cx)
-                        v_left = int(fy * left_3d[1] / left_3d[2] + cy)
-                        u_right = int(fx * right_3d[0] / right_3d[2] + cx)
-                        v_right = int(fy * right_3d[1] / right_3d[2] + cy)
+    #                 if left_3d[2] > 0 and right_3d[2] > 0:
+    #                     u_left = int(fx * left_3d[0] / left_3d[2] + cx)
+    #                     v_left = int(fy * left_3d[1] / left_3d[2] + cy)
+    #                     u_right = int(fx * right_3d[0] / right_3d[2] + cx)
+    #                     v_right = int(fy * right_3d[1] / right_3d[2] + cy)
                         
-                        cv2.line(vis_image, (u_left, v_left), (u_right, v_right), color, 3)
+    #                     cv2.line(vis_image, (u_left, v_left), (u_right, v_right), color, 3)
                     
-                    # 添加分数文本
-                    cv2.putText(vis_image, f'{score:.2f}', 
-                              (u + 10, v - 10), cv2.FONT_HERSHEY_SIMPLEX, 
-                              0.6, color, 2)
+    #                 # 添加分数文本
+    #                 cv2.putText(vis_image, f'{score:.2f}', 
+    #                           (u + 10, v - 10), cv2.FONT_HERSHEY_SIMPLEX, 
+    #                           0.6, color, 2)
         
-        return vis_image
+    #     return vis_image
     
-    def publish_grasp_markers(self, grasp_group: GraspGroup, frame_id: str = 'camera_depth_frame'):
-        """
-        发布RViz中的抓取可视化标记
+    # def publish_grasp_markers(self, grasp_group: GraspGroup, frame_id: str = 'camera_depth_frame'):
+    #     """
+    #     发布RViz中的抓取可视化标记
         
-        Args:
-            grasp_group: GraspNet推理得到的抓取组  
-            frame_id: 坐标系ID
-        """
-        marker_array = MarkerArray()
+    #     Args:
+    #         grasp_group: GraspNet推理得到的抓取组  
+    #         frame_id: 坐标系ID
+    #     """
+    #     marker_array = MarkerArray()
         
-        # 清除之前的标记
-        clear_marker = Marker()
-        clear_marker.header.frame_id = frame_id
-        clear_marker.header.stamp = self.get_clock().now().to_msg()
-        clear_marker.ns = ""
-        clear_marker.id = 0
-        clear_marker.action = Marker.DELETEALL
-        marker_array.markers.append(clear_marker)
+    #     # 清除之前的标记
+    #     clear_marker = Marker()
+    #     clear_marker.header.frame_id = frame_id
+    #     clear_marker.header.stamp = self.get_clock().now().to_msg()
+    #     clear_marker.ns = ""
+    #     clear_marker.id = 0
+    #     clear_marker.action = Marker.DELETEALL
+    #     marker_array.markers.append(clear_marker)
         
-        if len(grasp_group) == 0:
-            self.grasp_marker_pub.publish(marker_array)
-            return
+    #     if len(grasp_group) == 0:
+    #         self.grasp_marker_pub.publish(marker_array)
+    #         return
             
-        # 获取前5个最好的抓取
-        top_grasps = grasp_group.nms().sort_by_score()[:5]
+    #     # 获取前5个最好的抓取
+    #     top_grasps = grasp_group.nms().sort_by_score()[:5]
         
-        for i, (translation, rotation_matrix, width, score) in enumerate(
-            zip(top_grasps.translations, top_grasps.rotation_matrices, 
-                top_grasps.widths, top_grasps.scores)):
+    #     for i, (translation, rotation_matrix, width, score) in enumerate(
+    #         zip(top_grasps.translations, top_grasps.rotation_matrices, 
+    #             top_grasps.widths, top_grasps.scores)):
             
-            # 创建抓取姿态
-            pose = Pose()
-            pose.position = Point(x=float(translation[0]), 
-                                y=float(translation[1]), 
-                                z=float(translation[2]))
+    #         # 创建抓取姿态
+    #         pose = Pose()
+    #         pose.position = Point(x=float(translation[0]), 
+    #                             y=float(translation[1]), 
+    #                             z=float(translation[2]))
             
-            # 将旋转矩阵转换为四元数
-            from scipy.spatial.transform import Rotation as R
-            rotation = R.from_matrix(rotation_matrix)
-            quat = rotation.as_quat()  # [x, y, z, w]
-            pose.orientation = Quaternion(x=float(quat[0]), y=float(quat[1]), 
-                                        z=float(quat[2]), w=float(quat[3]))
+    #         # 将旋转矩阵转换为四元数
+    #         from scipy.spatial.transform import Rotation as R
+    #         rotation = R.from_matrix(rotation_matrix)
+    #         quat = rotation.as_quat()  # [x, y, z, w]
+    #         pose.orientation = Quaternion(x=float(quat[0]), y=float(quat[1]), 
+    #                                     z=float(quat[2]), w=float(quat[3]))
             
-            # 创建夹爪标记
-            markers = self.create_gripper_marker(pose, width, score, i * 5, frame_id)
-            marker_array.markers.extend(markers)
+    #         # 创建夹爪标记
+    #         markers = self.create_gripper_marker(pose, width, score, i * 5, frame_id)
+    #         marker_array.markers.extend(markers)
         
-        self.grasp_marker_pub.publish(marker_array)
-        self.get_logger().info(f'Published {len(top_grasps)} grasp markers')
+    #     self.grasp_marker_pub.publish(marker_array)
+    #     self.get_logger().info(f'Published {len(top_grasps)} grasp markers')
     
-    def create_gripper_marker(self, pose: Pose, width: float, score: float, 
-                             marker_id: int, frame_id: str) -> list:
-        """创建夹爪可视化标记"""
-        markers = []
+    # def create_gripper_marker(self, pose: Pose, width: float, score: float, 
+    #                          marker_id: int, frame_id: str) -> list:
+    #     """创建夹爪可视化标记"""
+    #     markers = []
         
-        # 根据分数设置颜色 (红到绿)
-        from std_msgs.msg import ColorRGBA
-        from geometry_msgs.msg import Vector3
+    #     # 根据分数设置颜色 (红到绿)
+    #     from std_msgs.msg import ColorRGBA
+    #     from geometry_msgs.msg import Vector3
         
-        color = ColorRGBA()
-        color.r = 1.0 - score
-        color.g = score  
-        color.b = 0.0
-        color.a = 0.8
+    #     color = ColorRGBA()
+    #     color.r = 1.0 - score
+    #     color.g = score  
+    #     color.b = 0.0
+    #     color.a = 0.8
         
-        # 夹爪手掌
-        palm_marker = Marker()
-        palm_marker.header.frame_id = frame_id
-        palm_marker.header.stamp = self.get_clock().now().to_msg()
-        palm_marker.ns = "gripper_palm"
-        palm_marker.id = marker_id
-        palm_marker.type = Marker.CUBE
-        palm_marker.action = Marker.ADD
-        palm_marker.pose = pose
-        palm_marker.scale = Vector3(x=0.02, y=0.08, z=0.04)
-        palm_marker.color = color
-        palm_marker.lifetime.sec = 30  # 设置标记存活时间30秒
-        markers.append(palm_marker)
+    #     # 夹爪手掌
+    #     palm_marker = Marker()
+    #     palm_marker.header.frame_id = frame_id
+    #     palm_marker.header.stamp = self.get_clock().now().to_msg()
+    #     palm_marker.ns = "gripper_palm"
+    #     palm_marker.id = marker_id
+    #     palm_marker.type = Marker.CUBE
+    #     palm_marker.action = Marker.ADD
+    #     palm_marker.pose = pose
+    #     palm_marker.scale = Vector3(x=0.02, y=0.08, z=0.04)
+    #     palm_marker.color = color
+    #     palm_marker.lifetime.sec = 60  # 设置标记存活时间60秒
+    #     markers.append(palm_marker)
         
-        # 夹爪手指
-        from scipy.spatial.transform import Rotation as R
-        q = pose.orientation
-        rotation = R.from_quat([q.x, q.y, q.z, q.w])
-        rotation_matrix = rotation.as_matrix()
-        position = np.array([pose.position.x, pose.position.y, pose.position.z])
+    #     # 夹爪手指
+    #     from scipy.spatial.transform import Rotation as R
+    #     q = pose.orientation
+    #     rotation = R.from_quat([q.x, q.y, q.z, q.w])
+    #     rotation_matrix = rotation.as_matrix()
+    #     position = np.array([pose.position.x, pose.position.y, pose.position.z])
         
-        # 左手指
-        left_finger = Marker()
-        left_finger.header = palm_marker.header
-        left_finger.ns = "gripper_left_finger"
-        left_finger.id = marker_id + 1
-        left_finger.type = Marker.CUBE
-        left_finger.action = Marker.ADD
+    #     # 左手指
+    #     left_finger = Marker()
+    #     left_finger.header = palm_marker.header
+    #     left_finger.ns = "gripper_left_finger"
+    #     left_finger.id = marker_id + 1
+    #     left_finger.type = Marker.CUBE
+    #     left_finger.action = Marker.ADD
         
-        left_offset = rotation_matrix @ np.array([0, width/2, 0.04])
-        left_pos = position + left_offset
-        left_finger.pose.position = Point(x=left_pos[0], y=left_pos[1], z=left_pos[2])
-        left_finger.pose.orientation = pose.orientation
-        left_finger.scale = Vector3(x=0.01, y=0.01, z=0.08)
-        left_finger.color = color
-        left_finger.lifetime.sec = 30
-        markers.append(left_finger)
+    #     left_offset = rotation_matrix @ np.array([0, width/2, 0.04])
+    #     left_pos = position + left_offset
+    #     left_finger.pose.position = Point(x=left_pos[0], y=left_pos[1], z=left_pos[2])
+    #     left_finger.pose.orientation = pose.orientation
+    #     left_finger.scale = Vector3(x=0.01, y=0.01, z=0.08)
+    #     left_finger.color = color
+    #     left_finger.lifetime.sec = 30
+    #     markers.append(left_finger)
         
-        # 右手指
-        right_finger = Marker()
-        right_finger.header = palm_marker.header
-        right_finger.ns = "gripper_right_finger"
-        right_finger.id = marker_id + 2
-        right_finger.type = Marker.CUBE
-        right_finger.action = Marker.ADD
+    #     # 右手指
+    #     right_finger = Marker()
+    #     right_finger.header = palm_marker.header
+    #     right_finger.ns = "gripper_right_finger"
+    #     right_finger.id = marker_id + 2
+    #     right_finger.type = Marker.CUBE
+    #     right_finger.action = Marker.ADD
         
-        right_offset = rotation_matrix @ np.array([0, -width/2, 0.04])
-        right_pos = position + right_offset
-        right_finger.pose.position = Point(x=right_pos[0], y=right_pos[1], z=right_pos[2])
-        right_finger.pose.orientation = pose.orientation
-        right_finger.scale = Vector3(x=0.01, y=0.01, z=0.08)
-        right_finger.color = color
-        right_finger.lifetime.sec = 30
-        markers.append(right_finger)
+    #     right_offset = rotation_matrix @ np.array([0, -width/2, 0.04])
+    #     right_pos = position + right_offset
+    #     right_finger.pose.position = Point(x=right_pos[0], y=right_pos[1], z=right_pos[2])
+    #     right_finger.pose.orientation = pose.orientation
+    #     right_finger.scale = Vector3(x=0.01, y=0.01, z=0.08)
+    #     right_finger.color = color
+    #     right_finger.lifetime.sec = 30
+    #     markers.append(right_finger)
         
-        # 接近方向箭头
-        approach_marker = Marker()
-        approach_marker.header = palm_marker.header
-        approach_marker.ns = "approach_vector"
-        approach_marker.id = marker_id + 3
-        approach_marker.type = Marker.ARROW
-        approach_marker.action = Marker.ADD
+    #     # 接近方向箭头
+    #     approach_marker = Marker()
+    #     approach_marker.header = palm_marker.header
+    #     approach_marker.ns = "approach_vector"
+    #     approach_marker.id = marker_id + 3
+    #     approach_marker.type = Marker.ARROW
+    #     approach_marker.action = Marker.ADD
         
-        approach_vector = -rotation_matrix[:, 2]  # 负Z轴
-        approach_start = position + approach_vector * 0.1
-        approach_marker.points = [
-            Point(x=approach_start[0], y=approach_start[1], z=approach_start[2]),
-            Point(x=position[0], y=position[1], z=position[2])
-        ]
-        approach_marker.scale = Vector3(x=0.005, y=0.01, z=0.01)
-        approach_marker.color = ColorRGBA(r=0.0, g=0.0, b=1.0, a=0.8)
-        approach_marker.lifetime.sec = 30
-        markers.append(approach_marker)
+    #     approach_vector = -rotation_matrix[:, 2]  # 负Z轴
+    #     approach_start = position + approach_vector * 0.1
+    #     approach_marker.points = [
+    #         Point(x=approach_start[0], y=approach_start[1], z=approach_start[2]),
+    #         Point(x=position[0], y=position[1], z=position[2])
+    #     ]
+    #     approach_marker.scale = Vector3(x=0.005, y=0.01, z=0.01)
+    #     approach_marker.color = ColorRGBA(r=0.0, g=0.0, b=1.0, a=0.8)
+    #     approach_marker.lifetime.sec = 30
+    #     markers.append(approach_marker)
         
-        # 分数文本
-        score_marker = Marker()
-        score_marker.header = palm_marker.header
-        score_marker.ns = "grasp_score"
-        score_marker.id = marker_id + 4
-        score_marker.type = Marker.TEXT_VIEW_FACING
-        score_marker.action = Marker.ADD
+    #     # 分数文本
+    #     score_marker = Marker()
+    #     score_marker.header = palm_marker.header
+    #     score_marker.ns = "grasp_score"
+    #     score_marker.id = marker_id + 4
+    #     score_marker.type = Marker.TEXT_VIEW_FACING
+    #     score_marker.action = Marker.ADD
         
-        text_pos = position + np.array([0, 0, -0.05])
-        score_marker.pose.position = Point(x=text_pos[0], y=text_pos[1], z=text_pos[2])
-        score_marker.scale.z = 0.02
-        score_marker.color = ColorRGBA(r=1.0, g=1.0, b=1.0, a=1.0)
-        score_marker.text = f"{score:.2f}"
-        score_marker.lifetime.sec = 30
-        markers.append(score_marker)
+    #     text_pos = position + np.array([0, 0, -0.05])
+    #     score_marker.pose.position = Point(x=text_pos[0], y=text_pos[1], z=text_pos[2])
+    #     score_marker.scale.z = 0.02
+    #     score_marker.color = ColorRGBA(r=1.0, g=1.0, b=1.0, a=1.0)
+    #     score_marker.text = f"{score:.2f}"
+    #     score_marker.lifetime.sec = 30
+    #     markers.append(score_marker)
         
-        return markers
+    #     return markers
     
     def detect_grasps_callback(self, request: DetectGrasps.Request, response: DetectGrasps.Response):
         """Service callback for grasp detection"""
         self.get_logger().info('DEBUG: === GRASP DETECTION CALLBACK STARTED ===')
 
-        global formatted_time
-        formatted_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         try:
             start_time = time.time()
@@ -932,6 +935,7 @@ class GraspDetectionService(Node):
                     color_image,
                     depth_image,
                     camera_info,
+                    timestamp_str,
                     request.workspace_min if request.workspace_min else None,
                     request.workspace_max if request.workspace_max else None,
                     request.target_object_class if request.target_object_class else None
@@ -952,7 +956,7 @@ class GraspDetectionService(Node):
             self._save_grasp_results_for_offline_vis(
                 cloud=o3d_cloud,
                 grasps=filtered_grasps,
-                output_dir="/tmp/graspnet_debug"+ f"/segmentation_{formatted_time}"
+                output_dir="/tmp/graspnet_debug"+ f"/segmentation_{timestamp_str}"
             )
             
             # Get top grasps
@@ -1141,7 +1145,7 @@ class GraspDetectionService(Node):
                     
                     # 保存可视化图像用于调试
                     import cv2
-                    cv2.imwrite(f'/tmp/graspnet_debug/segmentation_{formatted_time}/grasp_visualization.png', vis_image)
+                    cv2.imwrite(f'/tmp/graspnet_debug/segmentation_{timestamp_str}/grasp_visualization.png', vis_image)
                     self.get_logger().info('Saved grasp visualization to /tmp/graspnet_debug/grasp_visualization.png')
                     
                     # 确保图像是BGR格式（OpenCV默认）
@@ -1163,6 +1167,14 @@ class GraspDetectionService(Node):
             
         except Exception as e:
             self.get_logger().error(f'Grasp detection failed: {str(e)}')
+            response.success = False
+            response.message = f"Detection failed: {str(e)}"
+            import traceback
+            self.get_logger().error('!!!!!! 抓取检测流程发生严重错误 !!!!!!')
+            self.get_logger().error(f'错误类型: {type(e).__name__}')
+            self.get_logger().error(f'错误详情: {str(e)}')
+            # 下面这行是关键中的关键，它会打印出完整的错误调用路径
+            self.get_logger().error(f'错误追溯: {traceback.format_exc()}')
             response.success = False
             response.message = f"Detection failed: {str(e)}"
         
