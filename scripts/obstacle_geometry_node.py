@@ -4,73 +4,49 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 import open3d as o3d
-import cv2  # 确保导入了 OpenCV
+import cv2
 import time
 
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from moveit_commander import PlanningSceneInterface
-from moveit_msgs.msg import CollisionObject
+
+# 【修改1】导入新的、更底层的MoveIt消息和服务类型
+from moveit_msgs.msg import CollisionObject, PlanningScene
+from moveit_msgs.srv import ApplyPlanningScene
 from shape_msgs.msg import Mesh, MeshTriangle
 from geometry_msgs.msg import Pose, Point
 
 # 导入您自己的分割和点云工具
-# 确保这个路径是正确的，并且cv_segmentation.py已经更新
 import sys
 sys.path.append('/home/roar/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils')
 from cv_segmentation import SmartSegmentation
-
-# 导入新的服务定义
 from kinova_graspnet_ros2.srv import BuildObstacles
 
-# 【修改1】从 grasp_detection_service.py 导入所需的辅助函数
-# 为了保持代码独立和清晰，我们直接导入，而不是依赖于运行grasp_detection_service
-# 假设 grasp_detection_service.py 与此文件在同一Python包路径下
-# 如果不在，需要调整sys.path
+# 导入辅助函数
 try:
     from grasp_detection_service import create_point_cloud_from_depth_image, GraspNetCameraInfo
 except ImportError:
-    # 如果直接导入失败，提供一个后备定义，避免程序崩溃
     print("警告：无法从grasp_detection_service导入，将使用本地定义。")
     class GraspNetCameraInfo:
         def __init__(self, width, height, fx, fy, cx, cy, scale):
-            self.width = width
-            self.height = height
-            self.fx = fx
-            self.fy = fy
-            self.cx = cx
-            self.cy = cy
-            self.scale = scale
+            self.width, self.height, self.fx, self.fy, self.cx, self.cy, self.scale = width, height, fx, fy, cx, cy, scale
 
     def create_point_cloud_from_depth_image(depth, camera, organized=True):
-        assert(depth.shape[0] == camera.height and depth.shape[1] == camera.width)
-        xmap = np.arange(camera.width)
-        ymap = np.arange(camera.height)
-        xmap, ymap = np.meshgrid(xmap, ymap)
+        xmap, ymap = np.meshgrid(np.arange(camera.width), np.arange(camera.height))
         points_z = depth / camera.scale
         points_x = (xmap - camera.cx) * points_z / camera.fx
         points_y = (ymap - camera.cy) * points_z / camera.fy
         points = np.stack([points_x, points_y, points_z], axis=-1)
-        if not organized:
-            points = points.reshape([-1, 3])
-        return points
-
+        return points if organized else points.reshape([-1, 3])
 
 class ObstacleGeometryNode(Node):
-    """
-    一个ROS2服务节点，用于检测场景中的障碍物，
-    并将其作为凸包（Convex Hull）碰撞体添加到MoveIt规划场景中。
-    """
     def __init__(self):
         super().__init__('obstacle_geometry_node')
 
-        # 【修改2】声明与 grasp_detection_service.py 完全一致的相机参数
-        # 这样可以保证点云生成逻辑的一致性
+        # 参数声明 (与之前保持一致)
         self.declare_parameter('color_image_topic', '/camera/color/image_raw')
         self.declare_parameter('depth_image_topic', '/camera/depth/image_raw')
         self.declare_parameter('depth_camera_frame', 'camera_depth_frame')
-        
-        # 使用深度相机的内参，因为点云是基于深度图生成的
         self.declare_parameter('depth_camera_intrinsics.fx', 336.190430)
         self.declare_parameter('depth_camera_intrinsics.fy', 336.190430)
         self.declare_parameter('depth_camera_intrinsics.cx', 230.193512)
@@ -87,9 +63,16 @@ class ObstacleGeometryNode(Node):
 
         # 初始化工具
         self.bridge = CvBridge()
-        self.planning_scene_interface = PlanningSceneInterface(synchronous=True)
-        # 【修改3】初始化我们自己的分割器实例
-        self.segmentation_module = SmartSegmentation(device='cuda:0') # 可以指定设备
+        self.segmentation_module = SmartSegmentation(device='cuda:0')
+
+        # 【修改2】移除 PlanningSceneInterface，创建服务客户端
+        # del self.planning_scene_interface
+        self.apply_planning_scene_client = self.create_client(
+            ApplyPlanningScene,
+            '/apply_planning_scene'
+        )
+        while not self.apply_planning_scene_client.wait_for_service(timeout_sec=2.0):
+            self.get_logger().info('Waiting for /apply_planning_scene service...')
 
         # 订阅相机话题
         self.latest_color_image = None
@@ -97,7 +80,6 @@ class ObstacleGeometryNode(Node):
         self.color_sub = self.create_subscription(Image, self.color_topic, self.color_image_callback, 10)
         self.depth_sub = self.create_subscription(Image, self.depth_topic, self.depth_image_callback, 10)
         
-        # 记录已添加的障碍物名称，方便后续清理
         self.obstacle_names = []
 
         # 创建服务
@@ -107,8 +89,7 @@ class ObstacleGeometryNode(Node):
             self.build_obstacles_callback
         )
 
-        self.get_logger().info('Obstacle Geometry Node is ready.')
-        self.get_logger().info('Call "ros2 service call /build_obstacles kinova_graspnet_ros2/srv/BuildObstacles \'{target_object_class: "bottle"}\'" to build obstacles.')
+        self.get_logger().info('Obstacle Geometry Node is ready (using direct service call).')
 
     def color_image_callback(self, msg: Image):
         self.latest_color_image = msg
@@ -117,142 +98,161 @@ class ObstacleGeometryNode(Node):
         self.latest_depth_image = msg
 
     def build_obstacles_callback(self, request: BuildObstacles.Request, response: BuildObstacles.Response):
-        """服务回调函数，执行障碍物建模和发布"""
         self.get_logger().info(f'Received request to build obstacles, excluding "{request.target_object_class}".')
 
-        # 1. 检查数据是否就绪
         if self.latest_color_image is None or self.latest_depth_image is None:
             response.success = False
             response.message = "Camera images are not available."
             self.get_logger().error(response.message)
             return response
             
-        # 2. 清理旧的障碍物
-        if self.obstacle_names:
-            self.get_logger().info(f"Removing {len(self.obstacle_names)} old obstacles from planning scene...")
-            self.planning_scene_interface.remove_collision_objects(self.obstacle_names)
-            self.obstacle_names.clear()
-            time.sleep(0.5) # 等待场景更新
-
-        # 3. 数据转换和分割
+        # 【修改3】清理旧障碍物的逻辑也需要改变
+        self.clear_obstacles()
+        
         try:
-            # ROS Image -> OpenCV BGR
             color_image_cv = self.bridge.imgmsg_to_cv2(self.latest_color_image, "bgr8")
             depth_image_cv = self.bridge.imgmsg_to_cv2(self.latest_depth_image, "passthrough")
-
-            # 【修改4】调用我们新增的全局分割方法
-            # 这是最核心的修改！
-            self.get_logger().info("Calling segment_all_objects...")
             segmented_objects = self.segmentation_module.segment_all_objects(color_image_cv)
 
             if not segmented_objects:
                 response.success = True
-                response.message = "No objects detected by segmentation module."
-                self.get_logger().info(response.message)
+                response.message = "No objects detected."
                 return response
-
         except Exception as e:
             response.success = False
-            response.message = f"Failed during image conversion or segmentation: {e}"
-            self.get_logger().error(response.message, exc_info=True) # 打印详细错误
+            response.message = f"Segmentation failed: {e}"
+            self.get_logger().error(response.message, exc_info=True)
             return response
 
-        # 4. 创建完整点云
         h, w = depth_image_cv.shape
         camera = GraspNetCameraInfo(w, h, self.depth_cam_fx, self.depth_cam_fy, self.depth_cam_cx, self.depth_cam_cy, 1000.0)
-        # 【修改5】创建有组织点云，方便索引
         full_cloud_np = create_point_cloud_from_depth_image(depth_image_cv, camera, organized=True)
 
-        # 5. 迭代处理每个障碍物
         obstacle_count = 0
         for class_name, masks in segmented_objects.items():
-            # 【修改6】精确排除目标物体
             if class_name == request.target_object_class:
                 self.get_logger().info(f'Skipping target object: "{class_name}"')
                 continue
 
-            self.get_logger().info(f'Processing obstacle: "{class_name}"')
             for i, mask in enumerate(masks):
-                # 调整掩码尺寸以匹配深度图
+                # ... [此部分逻辑与之前版本相同，直到调用 add_mesh_to_planning_scene] ...
                 if mask.shape[:2] != (h, w):
-                    # 使用OpenCV进行缩放
                     mask_resized = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
                 else:
                     mask_resized = mask
                 
-                # 提取点云簇
-                # 使用布尔索引，确保掩码和点云形状匹配
                 obstacle_points = full_cloud_np[mask_resized > 0]
                 
-                if len(obstacle_points) < 100: # 忽略太小的点云簇
-                    self.get_logger().warn(f'Skipping small point cloud cluster for {class_name}_{i} ({len(obstacle_points)} points).')
+                if len(obstacle_points) < 100:
                     continue
 
                 obstacle_pcd = o3d.geometry.PointCloud()
                 obstacle_pcd.points = o3d.utility.Vector3dVector(obstacle_points)
-                
-                # 【修改7】增加一步降采样，可以使凸包计算更稳定且更快
                 obstacle_pcd = obstacle_pcd.voxel_down_sample(voxel_size=0.005)
 
-                # 6. 计算凸包
                 try:
                     hull_mesh, _ = obstacle_pcd.compute_convex_hull()
                     if not hull_mesh.has_triangles():
-                        self.get_logger().warn(f"Convex hull for {class_name}_{i} resulted in an empty mesh.")
                         continue
-                    hull_mesh.compute_vertex_normals() # 好习惯
+                    hull_mesh.compute_vertex_normals()
                 except Exception as e:
-                    self.get_logger().error(f"Failed to compute convex hull for {class_name}_{i}: {e}")
+                    self.get_logger().error(f"Convex hull failed for {class_name}_{i}: {e}")
                     continue
 
-                # 7. 创建并发布CollisionObject
                 obstacle_name = f"obstacle_{class_name}_{i}"
-                self.add_mesh_to_planning_scene(obstacle_name, hull_mesh)
+                # 【修改4】调用我们新的、基于服务的添加函数
+                self.add_mesh_to_planning_scene_service(obstacle_name, hull_mesh)
                 self.obstacle_names.append(obstacle_name)
                 obstacle_count += 1
                 
         response.success = True
         response.message = f"Successfully built {obstacle_count} obstacles."
         response.num_obstacles_built = obstacle_count
-        self.get_logger().info(response.message)
         return response
 
-    def add_mesh_to_planning_scene(self, name: str, mesh_o3d: o3d.geometry.TriangleMesh):
-        """将open3d的Mesh作为碰撞体添加到MoveIt规划场景中"""
+    # 【修改5】新增一个专门用于清理障碍物的函数
+    def clear_obstacles(self):
+        """使用服务调用来清理之前添加的所有障碍物"""
+        if not self.obstacle_names:
+            return
+
+        self.get_logger().info(f"Removing {len(self.obstacle_names)} old obstacles via service call...")
         
-        collision_object = CollisionObject()
-        collision_object.header.frame_id = self.camera_frame # 障碍物位于相机坐标系中
-        collision_object.id = name
+        planning_scene = PlanningScene()
+        planning_scene.is_diff = True # 表示这是一个更新
+
+        for name in self.obstacle_names:
+            co = CollisionObject()
+            co.id = name
+            co.operation = CollisionObject.REMOVE # 指定操作为移除
+            planning_scene.world.collision_objects.append(co)
         
-        # 从Open3D Mesh创建ROS Mesh消息
+        # 发送请求
+        request = ApplyPlanningScene.Request()
+        request.scene = planning_scene
+        future = self.apply_planning_scene_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+
+        if future.result() and future.result().success:
+            self.get_logger().info("Old obstacles removed successfully.")
+        else:
+            self.get_logger().warn("Failed to remove old obstacles.")
+        
+        self.obstacle_names.clear()
+
+    # 【修改6】将 `add_mesh_to_planning_scene` 彻底改造为服务调用方式
+    def add_mesh_to_planning_scene_service(self, name: str, mesh_o3d: o3d.geometry.TriangleMesh):
+        """将open3d的Mesh作为碰撞体，通过服务调用添加到MoveIt规划场景中"""
+        
+        # 1. 创建CollisionObject消息 (这部分不变)
+        co = CollisionObject()
+        co.header.frame_id = self.camera_frame
+        co.id = name
+        
         ros_mesh = Mesh()
         vertices = np.asarray(mesh_o3d.vertices)
         for v in vertices:
             ros_mesh.vertices.append(Point(x=float(v[0]), y=float(v[1]), z=float(v[2])))
-            
+        
         triangles = np.asarray(mesh_o3d.triangles)
         for t in triangles:
             ros_mesh.triangles.append(MeshTriangle(vertex_indices=t.astype(np.uint32).tolist()))
             
-        # 设置碰撞体的形状和位姿
-        # 因为点云和Mesh顶点都在相机坐标系下，所以位姿是单位矩阵（无变换）
         mesh_pose = Pose()
-        mesh_pose.orientation.w = 1.0 # 单位四元数
+        mesh_pose.orientation.w = 1.0
         
-        collision_object.meshes.append(ros_mesh)
-        collision_object.mesh_poses.append(mesh_pose)
-        collision_object.operation = CollisionObject.ADD
+        co.meshes.append(ros_mesh)
+        co.mesh_poses.append(mesh_pose)
+        co.operation = CollisionObject.ADD
 
-        # 应用到规划场景
-        self.planning_scene_interface.apply_collision_object(collision_object)
-        self.get_logger().info(f"Added collision object '{name}' to planning scene.")
+        # 2. 构建PlanningScene消息
+        planning_scene = PlanningScene()
+        planning_scene.world.collision_objects.append(co)
+        planning_scene.is_diff = True  # 关键！表示只应用这个变更
+
+        # 3. 构建并发送服务请求
+        request = ApplyPlanningScene.Request()
+        request.scene = planning_scene
+        
+        future = self.apply_planning_scene_client.call_async(request)
+
+        # 4. 等待服务完成 (可以设置为非阻塞，但这里为了简单设为阻塞等待)
+        # 在实际应用中，可以处理future的回调函数
+        rclpy.spin_until_future_complete(self, future, timeout_sec=5.0)
+        
+        if future.result():
+            if future.result().success:
+                self.get_logger().info(f"Added collision object '{name}' to planning scene via service.")
+            else:
+                self.get_logger().warn(f"Service call to add '{name}' failed.")
+        else:
+            self.get_logger().error(f"Service call for '{name}' timed out.")
 
 
 def main(args=None):
     rclpy.init(args=args)
     try:
         node = ObstacleGeometryNode()
-        # 【修改8】使用多线程执行器，避免服务回调阻塞主循环或订阅
         executor = rclpy.executors.MultiThreadedExecutor()
         executor.add_node(node)
         executor.spin()
