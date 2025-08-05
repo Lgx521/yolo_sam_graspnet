@@ -1,0 +1,8 @@
+# Request
+string target_object_class  # 要抓取的目标对象类别，例如 "bottle"，此对象将不会被建模为障碍物
+
+---
+# Response
+bool success                # 是否成功
+string message              # 返回信息
+int32 num_obstacles_built   # 成功构建的障碍物数量

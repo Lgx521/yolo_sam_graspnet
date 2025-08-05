@@ -233,6 +233,57 @@ class SmartSegmentation:
             return mask, vis_img
         return mask
 
+    def segment_all_objects(self, image, conf_threshold=0.25):
+        """
+        分割图像中的所有可识别对象，并按类别返回它们的掩码。
+
+        Args:
+            image (np.ndarray): 输入的BGR图像。
+            conf_threshold (float): YOLO检测的置信度阈值。
+
+        Returns:
+            dict: 一个字典，键是对象类别名(str)，值是该类别下所有掩码(np.ndarray of uint8)的列表。
+                  例如: {'bottle': [mask1, mask2], 'cup': [mask3]}
+        """
+        yolo = self._init_yolo()
+        sam = self._init_sam()
+
+        # 1. 使用YOLO-World进行通用物体检测
+        # 不设置特定类别，让YOLO-World检测所有它能识别的物体
+        yolo.set_classes(["person", "bottle", "cup", "chair", "laptop", "keyboard", "mouse", "book", "cell phone"])
+        results = yolo.predict(image, conf=conf_threshold, verbose=False)
+
+        # 如果没有检测结果，返回空字典
+        if not results or results[0].boxes is None:
+            return {}
+            
+        # 提取所有检测框
+        boxes = results[0].boxes.xyxy.cpu().numpy()
+        class_indices = results[0].boxes.cls.cpu().numpy()
+        class_names_map = results[0].names
+        
+        # 2. 使用SAM对所有检测框进行分割
+        # SAM可以一次性处理多个边界框，效率很高
+        sam.set_image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        sam_results = sam(bboxes=boxes)
+        
+        segmented_objects = {}
+        if not sam_results or not sam_results[0].masks:
+            return {}
+
+        # 3. 整理分割结果
+        all_masks = sam_results[0].masks.data.cpu().numpy()
+
+        for i in range(len(all_masks)):
+            class_name = class_names_map[int(class_indices[i])]
+            mask = (all_masks[i] > 0).astype(np.uint8)
+
+            if class_name not in segmented_objects:
+                segmented_objects[class_name] = []
+            
+            segmented_objects[class_name].append(mask)
+
+        return segmented_objects
 
 # 全局分割器实例
 _global_segmenter = None
@@ -289,16 +340,37 @@ def segment_image(image, output_mask='mask.png'):
 if __name__ == '__main__':
     # 测试代码
     import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == '--test-all':
+        image_path = sys.argv[2]
+        print(f"--- 测试全局分割功能 ---")
+        print(f"图像: {image_path}")
+        
+        segmenter = SmartSegmentation()
+        bgr_image = cv2.imread(image_path)
+        
+        all_objects = segmenter.segment_all_objects(bgr_image)
+        
+        print(f"\n检测并分割到的所有对象类别:")
+        total_masks = 0
+        for class_name, masks in all_objects.items():
+            print(f"  - 类别: {class_name}, 数量: {len(masks)}")
+            total_masks += len(masks)
+            # 可选：将每个掩码保存下来进行可视化检查
+            for i, mask in enumerate(masks):
+                cv2.imwrite(f'test_output_{class_name}_{i}.png', mask * 255)
+
+        print(f"\n总共分割出 {total_masks} 个物体。")
     
-    if len(sys.argv) > 1:
-        image_path = sys.argv[1]
-        target_class = sys.argv[2] if len(sys.argv) > 2 else None
+    # elif len(sys.argv) > 1:
+    #     image_path = sys.argv[1]
+    #     target_class = sys.argv[2] if len(sys.argv) > 2 else None
         
-        print(f"分割图像: {image_path}")
-        if target_class:
-            print(f"目标类别: {target_class}")
+    #     print(f"分割图像: {image_path}")
+    #     if target_class:
+    #         print(f"目标类别: {target_class}")
         
-        mask = segment_objects(image_path, target_class=target_class)
-        print(f"分割完成，掩码尺寸: {mask.shape}")
+    #     mask = segment_objects(image_path, target_class=target_class)
+    #     print(f"分割完成，掩码尺寸: {mask.shape}")
     else:
         print("用法: python cv_segmentation.py <image_path> [target_class]")

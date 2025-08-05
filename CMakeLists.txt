@@ -19,7 +19,7 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/DetectGrasps.srv"
   "srv/ExecuteGrasp.srv"
-  DEPENDENCIES geometry_msgs sensor_msgs std_msgs
+  DEPENDENCIES geometry_msgs sensor_msgs std_msgs movition_msgs
 )
 
 # Install Python modules (removed due to target conflict)
