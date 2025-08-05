@@ -14,12 +14,14 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(moveit_msgs REQUIRED)
 
 # Generate service interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/DetectGrasps.srv"
   "srv/ExecuteGrasp.srv"
-  DEPENDENCIES geometry_msgs sensor_msgs std_msgs movition_msgs
+  "srv/BuildObstacles.srv"
+  DEPENDENCIES geometry_msgs sensor_msgs std_msgs moveit_msgs
 )
 
 # Install Python modules (removed due to target conflict)
@@ -35,6 +37,7 @@ install(PROGRAMS
   scripts/grasp_visualizer_base_link.py
   scripts/detect_grasps_client.py
   scripts/yolo_detection_node.py
+  scripts/obstacle_geometry_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
