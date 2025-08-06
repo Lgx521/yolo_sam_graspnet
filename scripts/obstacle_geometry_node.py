@@ -34,9 +34,10 @@ class ObstacleGeometryNode(Node):
 
         # 声明与抓取检测服务一致的参数
         self.declare_parameter('color_image_topic', '/camera/color/image_raw')
-        self.declare_parameter('depth_image_topic', '/camera/depth/image_raw')
+        # self.declare_parameter('depth_image_topic', '/camera/depth/image_raw')
+        self.declare_parameter('depth_image_topic', '/camera/depth_registered/image_rect')
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
-        self.declare_parameter('depth_camera_frame', 'camera_depth_frame')
+        self.declare_parameter('depth_camera_frame', 'camera_link')
 
         # 获取参数
         color_topic = self.get_parameter('color_image_topic').value
@@ -157,7 +158,7 @@ class ObstacleGeometryNode(Node):
             
             # eps: 邻域半径; min_points: 成为核心点的最小邻居数
             # 这两个参数可能需要根据您的场景进行微调
-            labels = np.array(pcd.cluster_dbscan(eps=0.03, min_points=50, print_progress=False))
+            labels = np.array(pcd.cluster_dbscan(eps=0.04, min_points=25, print_progress=True))
             
             max_label = labels.max()
             self.get_logger().info(f"聚类完成，发现 {max_label + 1} 个障碍物。")
@@ -221,17 +222,32 @@ class ObstacleGeometryNode(Node):
         marker.scale.z = 1.0
         
         # 设置颜色（半透明红色）
-        marker.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.4)
+        marker.color = ColorRGBA(r=0.5, g=0.0, b=0.8, a=0.4)
         
-        # 填充顶点和三角面片索引
-        for vertex in np.asarray(hull.vertices):
-            p = Point()
-            p.x, p.y, p.z = vertex
-            marker.points.append(p)
-        
-        # Open3D的TriangleMesh顶点已经是用于发布的顶点了，
-        # Marker.TRIANGLE_LIST会自动按顺序每三个点组成一个三角形。
-        # 所以我们不需要单独设置 `marker.triangles`。
+        # 获取所有的顶点和所有的三角面片索引
+        vertices = np.asarray(hull.vertices)
+        triangles = np.asarray(hull.triangles)
+
+        # 遍历每个三角面片
+        for triangle_indices in triangles:
+            # 对每个三角面片，我们将其三个顶点按顺序添加到 marker.points 列表
+            # triangle_indices 是一个包含三个数字的数组，例如 [5, 12, 34]，
+            # 分别是该三角形三个顶点在 vertices 数组中的索引。
+            
+            # 添加第一个顶点
+            p1 = Point()
+            p1.x, p1.y, p1.z = vertices[triangle_indices[0]]
+            marker.points.append(p1)
+            
+            # 添加第二个顶点
+            p2 = Point()
+            p2.x, p2.y, p2.z = vertices[triangle_indices[1]]
+            marker.points.append(p2)
+            
+            # 添加第三个顶点
+            p3 = Point()
+            p3.x, p3.y, p3.z = vertices[triangle_indices[2]]
+            marker.points.append(p3)
 
         return marker
 
