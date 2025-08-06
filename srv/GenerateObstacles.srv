@@ -1,0 +1,6 @@
+# Request: a string specifying the target object class to be excluded from obstacles
+string target_object_class
+---
+# Response: success status and a message
+bool success
+string message

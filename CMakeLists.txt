@@ -21,6 +21,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/DetectGrasps.srv"
   "srv/ExecuteGrasp.srv"
   "srv/BuildObstacles.srv"
+  "srv/GenerateObstacles.srv"
   DEPENDENCIES geometry_msgs sensor_msgs std_msgs moveit_msgs
 )
 
