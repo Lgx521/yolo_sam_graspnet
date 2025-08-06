@@ -118,8 +118,8 @@ class ObstacleGeometryNode(Node):
             scene_pcd = o3d.geometry.PointCloud()
             scene_pcd.points = o3d.utility.Vector3dVector(full_cloud_organized[valid_depth_mask])
 
-            min_bound = np.array([-0.5, -0.4, 0.1])
-            max_bound = np.array([0.5, 0.4, 1.0])
+            min_bound = np.array([-0.3, -0.3, 0.05])
+            max_bound = np.array([0.3, 0.3, 0.8])
             bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
             workspace_pcd = scene_pcd.crop(bbox)
             self.get_logger().info(f"  - 工作空间内总点数: {len(workspace_pcd.points)}")
@@ -133,7 +133,7 @@ class ObstacleGeometryNode(Node):
                 target_mask = np.zeros(color_cv.shape[:2], dtype=np.uint8)
 
             # --- 新增：对目标掩码进行膨胀处理，以创建安全边界 ---
-            kernel_size = 7 # 可以调整内核大小, 5或7通常不错
+            kernel_size = 11 # 可以调整内核大小, 5或7通常不错
             kernel = np.ones((kernel_size, kernel_size), np.uint8)
             dilated_target_mask = cv2.dilate(target_mask, kernel, iterations=1)
             # --- 膨胀处理结束 ---
