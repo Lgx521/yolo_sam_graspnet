@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo, PointCloud2
+from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 import numpy as np
 import open3d as o3d
@@ -29,7 +29,7 @@ class ObstacleGeometryNode(Node):
     """
     一个ROS2节点，用于识别除目标物体外的障碍物，
     并将其几何形状建模为凸包进行可视化。
-    采用鲁棒的点云减法策略。
+    采用鲁棒的点云减法策略，并集成了性能和精度优化。
     """
     def __init__(self):
         super().__init__('obstacle_geometry_node')
@@ -91,7 +91,7 @@ class ObstacleGeometryNode(Node):
                 self.get_logger().info('相机数据已准备就绪。')
 
     def generate_obstacles_callback(self, request: GenerateObstacles.Request, response: GenerateObstacles.Response):
-        """服务回调函数，执行障碍物检测和凸包生成（采用点云减法策略）"""
+        """服务回调函数，执行障碍物检测和凸包生成"""
         if not self.camera_data_ready:
             response.success = False
             response.message = "相机数据尚未准备好。"
@@ -114,64 +114,54 @@ class ObstacleGeometryNode(Node):
             
             full_cloud_organized = create_point_cloud_from_depth_image(depth_cv, graspnet_cam, organized=True)
             valid_depth_mask = (depth_cv > 0)
-            scene_points = full_cloud_organized[valid_depth_mask]
             
             scene_pcd = o3d.geometry.PointCloud()
-            scene_pcd.points = o3d.utility.Vector3dVector(scene_points)
+            scene_pcd.points = o3d.utility.Vector3dVector(full_cloud_organized[valid_depth_mask])
 
-            # !!! 关键: 您需要根据您机器人的实际工作空间来调整这些值 !!!
-            min_bound = np.array([-0.5, -0.4, 0.1])  # x, y, z
-            max_bound = np.array([0.5, 0.4, 1.0])   # x, y, z
+            min_bound = np.array([-0.5, -0.4, 0.1])
+            max_bound = np.array([0.5, 0.4, 1.0])
             bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
             workspace_pcd = scene_pcd.crop(bbox)
             self.get_logger().info(f"  - 工作空间内总点数: {len(workspace_pcd.points)}")
 
-            # 步骤 2: 分割出目标物体，并获取其点云
+            # 步骤 2: 分割目标物体，并对掩码进行膨胀处理
             self.get_logger().info(f"步骤 2/5: 分割目标物体 '{request.target_object_class}'...")
             target_mask, _ = segment_objects(color_cv, target_class=request.target_object_class, return_vis=True)
             
             if target_mask is None:
-                self.get_logger().warn(f"无法分割目标物体 '{request.target_object_class}'。将整个工作空间视为障碍物。")
+                self.get_logger().warn(f"无法分割目标物体 '{request.target_object_class}'。")
                 target_mask = np.zeros(color_cv.shape[:2], dtype=np.uint8)
 
-            if target_mask.shape != depth_cv.shape:
-                target_mask_resized = cv2.resize(target_mask.astype(np.uint8), (depth_cv.shape[1], depth_cv.shape[0]), interpolation=cv2.INTER_NEAREST)
+            # --- 新增：对目标掩码进行膨胀处理，以创建安全边界 ---
+            kernel_size = 7 # 可以调整内核大小, 5或7通常不错
+            kernel = np.ones((kernel_size, kernel_size), np.uint8)
+            dilated_target_mask = cv2.dilate(target_mask, kernel, iterations=1)
+            # --- 膨胀处理结束 ---
+
+            if dilated_target_mask.shape != depth_cv.shape:
+                target_mask_resized = cv2.resize(dilated_target_mask, (depth_cv.shape[1], depth_cv.shape[0]), interpolation=cv2.INTER_NEAREST)
             else:
-                target_mask_resized = target_mask
+                target_mask_resized = dilated_target_mask
             
             final_target_mask = (target_mask_resized > 0) & valid_depth_mask
-            target_points = full_cloud_organized[final_target_mask]
             target_pcd = o3d.geometry.PointCloud()
-            target_pcd.points = o3d.utility.Vector3dVector(target_points)
-            self.get_logger().info(f"  - 目标物体点数: {len(target_pcd.points)}")
+            target_pcd.points = o3d.utility.Vector3dVector(full_cloud_organized[final_target_mask])
+            self.get_logger().info(f"  - (膨胀后)目标物体点数: {len(target_pcd.points)}")
 
-            # 步骤 3: 从工作空间点云中“减去”目标物体点云，得到障碍物点云
-            self.get_logger().info("步骤 3/5: 计算障碍物点云（场景点云 - 目标点云）...")
+            # 步骤 3: 计算障碍物点云
+            self.get_logger().info("步骤 3/5: 计算障碍物点云...")
             
             if len(target_pcd.points) > 0 and len(workspace_pcd.points) > 0:
-                # 使用点云距离查询来实现“减法”
-                target_kdtree = o3d.geometry.KDTreeFlann(target_pcd)
-                
-                obstacle_indices = []
-                # 遍历工作空间中的每个点
-                for i, point in enumerate(np.asarray(workspace_pcd.points)):
-                    # 在目标点云中搜索该点的最近邻
-                    [k, idx, _] = target_kdtree.search_knn_vector_3d(point, 1)
-                    if k > 0:
-                        # 计算该点与目标点云中最近点的距离
-                        dist = np.linalg.norm(point - np.asarray(target_pcd.points)[idx[0]])
-                        # 如果距离大于一个小阈值（例如2毫米），我们就认为它不属于目标物体，而是障碍物
-                        if dist > 0.002:
-                            obstacle_indices.append(i)
-                
+                # --- 性能优化：使用Open3D内置函数代替Python循环 ---
+                distances = workspace_pcd.compute_point_cloud_distance(target_pcd)
+                obstacle_indices = np.where(np.asarray(distances) > 0.005)[0] # 阈值提高到5mm
                 obstacle_pcd = workspace_pcd.select_by_index(obstacle_indices)
+                # --- 优化结束 ---
             else:
-                # 如果没有找到目标物体，或工作空间为空，那么工作空间里所有东西都是障碍物
                 obstacle_pcd = workspace_pcd
             
             self.get_logger().info(f"  - 计算后的障碍物点数: {len(obstacle_pcd.points)}")
             
-            # 为了后续代码兼容，重命名一下
             pcd = obstacle_pcd 
             
             if len(pcd.points) < 20: 
@@ -182,7 +172,7 @@ class ObstacleGeometryNode(Node):
                  return response
             
             self.get_logger().info("  - 进行体素下采样...")
-            voxel_size = 0.01 # 1cm的立方体
+            voxel_size = 0.01 
             pcd = pcd.voxel_down_sample(voxel_size)
             self.get_logger().info(f"  - 体素下采样后点数: {len(pcd.points)}")
                  
@@ -193,7 +183,6 @@ class ObstacleGeometryNode(Node):
             noise_points = np.sum(np.array(labels) == -1)
             self.get_logger().info(f"聚类完成，发现 {max_label + 1} 个障碍物。另外有 {noise_points} 个点被认为是噪声。")
             
-            # 步骤 5: 为每个聚类创建凸包并发布Marker
             self.get_logger().info("步骤 5/5: 生成凸包并发布可视化标记...")
             marker_array = MarkerArray()
             
@@ -231,7 +220,7 @@ class ObstacleGeometryNode(Node):
         return response
     
     def create_hull_marker(self, hull: o3d.geometry.TriangleMesh, marker_id: int) -> Marker:
-        """将Open3D的TriangleMesh转换为ROS的Marker（修复了点数非3的倍数问题）"""
+        # ... (此函数与上一版相同，无需修改)
         marker = Marker()
         marker.header.frame_id = self.camera_frame
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -239,36 +228,21 @@ class ObstacleGeometryNode(Node):
         marker.id = marker_id
         marker.type = Marker.TRIANGLE_LIST
         marker.action = Marker.ADD
-        
         marker.pose.orientation.w = 1.0
-        
         marker.scale.x = 1.0
         marker.scale.y = 1.0
         marker.scale.z = 1.0
-        
-        # 设置颜色为半透明紫色
         marker.color = ColorRGBA(r=0.5, g=0.0, b=0.8, a=0.4)
-        
         vertices = np.asarray(hull.vertices)
         triangles = np.asarray(hull.triangles)
-
         for triangle_indices in triangles:
-            p1 = Point()
-            p1.x, p1.y, p1.z = vertices[triangle_indices[0]]
-            marker.points.append(p1)
-            
-            p2 = Point()
-            p2.x, p2.y, p2.z = vertices[triangle_indices[1]]
-            marker.points.append(p2)
-            
-            p3 = Point()
-            p3.x, p3.y, p3.z = vertices[triangle_indices[2]]
-            marker.points.append(p3)
-    
+            p1 = Point(); p1.x, p1.y, p1.z = vertices[triangle_indices[0]]; marker.points.append(p1)
+            p2 = Point(); p2.x, p2.y, p2.z = vertices[triangle_indices[1]]; marker.points.append(p2)
+            p3 = Point(); p3.x, p3.y, p3.z = vertices[triangle_indices[2]]; marker.points.append(p3)
         return marker
 
     def clear_markers(self):
-        """发布一个空的MarkerArray来清除RViz中的所有旧标记"""
+        # ... (此函数与上一版相同，无需修改)
         marker_array = MarkerArray()
         clear_marker = Marker()
         clear_marker.header.frame_id = self.camera_frame
@@ -278,6 +252,7 @@ class ObstacleGeometryNode(Node):
         self.get_logger().info("已清除所有障碍物标记。")
 
 def main(args=None):
+    # ... (此函数与上一版相同，无需修改)
     rclpy.init(args=args)
     try:
         node = ObstacleGeometryNode()
@@ -285,7 +260,6 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        # 在关闭前尝试销毁节点
         if 'node' in locals() and rclpy.ok():
             node.destroy_node()
         rclpy.shutdown()
