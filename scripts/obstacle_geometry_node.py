@@ -133,7 +133,7 @@ class ObstacleGeometryNode(Node):
                 target_mask = np.zeros(color_cv.shape[:2], dtype=np.uint8)
 
             # --- 新增：对目标掩码进行膨胀处理，以创建安全边界 ---
-            kernel_size = 11 # 可以调整内核大小, 5或7通常不错
+            kernel_size = 13 # 可以调整内核大小, 5或7通常不错
             kernel = np.ones((kernel_size, kernel_size), np.uint8)
             dilated_target_mask = cv2.dilate(target_mask, kernel, iterations=1)
             # --- 膨胀处理结束 ---
@@ -191,24 +191,41 @@ class ObstacleGeometryNode(Node):
             clear_marker.action = Marker.DELETEALL
             marker_array.markers.append(clear_marker)
 
+            alpha_value = 0.05 # Alpha Shape的参数可以调整
+
             for i in range(max_label + 1):
                 cluster_indices = np.where(labels == i)[0]
                 if len(cluster_indices) == 0: continue
                 
                 cluster_pcd = pcd.select_by_index(cluster_indices)
                 
+                # 检查聚类是否有足够的点来构建Alpha Shape（例如，至少4个点）
+                if len(cluster_pcd.points) < 4:
+                    self.get_logger().info(f"聚类 {i} 点数过少 ({len(cluster_pcd.points)}), 跳过 Alpha Shape 生成。")
+                    continue
+                
                 try:
-                    hull, _ = cluster_pcd.compute_convex_hull()
-                    if len(np.asarray(hull.vertices)) > 0:
-                        hull.orient_triangles()
-                        hull_marker = self.create_hull_marker(hull, i)
-                        marker_array.markers.append(hull_marker)
+                    # 使用 Alpha Shape 代替 Convex Hull
+                    alpha_shape_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(
+                        cluster_pcd, alpha_value
+                    )
+
+                    # 为了避免网格内部出现孔洞，我们只使用其边界三角形
+                    alpha_shape_mesh.compute_vertex_normals()
+                    
+                    # 确保法线方向一致，以正确显示
+                    alpha_shape_mesh.orient_triangles()
+                    
+                    # 使用新的 create_mesh_marker 函数
+                    mesh_marker = self.create_mesh_marker(alpha_shape_mesh, i)
+                    marker_array.markers.append(mesh_marker)
+                    
                 except Exception as e:
-                    self.get_logger().warn(f"为聚类 {i} 创建凸包失败: {e}")
+                    self.get_logger().warn(f"为聚类 {i} 创建 Alpha Shape 失败: {e}")
 
             self.marker_pub.publish(marker_array)
             response.success = True
-            response.message = f"成功生成并发布了 {max_label + 1} 个障碍物的凸包。"
+            response.message = f"成功生成并发布了 {max_label + 1} 个障碍物的Alpha Shape。"
             self.get_logger().info(response.message)
 
         except Exception as e:
@@ -218,27 +235,38 @@ class ObstacleGeometryNode(Node):
             response.success = False
             response.message = str(e)
         return response
-    
-    def create_hull_marker(self, hull: o3d.geometry.TriangleMesh, marker_id: int) -> Marker:
-        # ... (此函数与上一版相同，无需修改)
+
+
+    def create_mesh_marker(self, mesh: o3d.geometry.TriangleMesh, marker_id: int) -> Marker:
+        """将Open3D的TriangleMesh（凸包或Alpha Shape）转换为ROS的Marker"""
         marker = Marker()
         marker.header.frame_id = self.camera_frame
         marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = "obstacle_hulls"
+        marker.ns = "obstacle_meshes"  # 命名空间更通用
         marker.id = marker_id
         marker.type = Marker.TRIANGLE_LIST
         marker.action = Marker.ADD
+        
+        # 姿态和尺寸不变
         marker.pose.orientation.w = 1.0
         marker.scale.x = 1.0
         marker.scale.y = 1.0
         marker.scale.z = 1.0
-        marker.color = ColorRGBA(r=0.5, g=0.0, b=0.8, a=0.4)
-        vertices = np.asarray(hull.vertices)
-        triangles = np.asarray(hull.triangles)
+
+        # 颜色
+        marker.color = ColorRGBA(r=0.0, g=1.0, b=0.0, a=0.3)
+        
+        # 填充顶点和三角面片
+        vertices = np.asarray(mesh.vertices)
+        triangles = np.asarray(mesh.triangles)
+
         for triangle_indices in triangles:
-            p1 = Point(); p1.x, p1.y, p1.z = vertices[triangle_indices[0]]; marker.points.append(p1)
-            p2 = Point(); p2.x, p2.y, p2.z = vertices[triangle_indices[1]]; marker.points.append(p2)
-            p3 = Point(); p3.x, p3.y, p3.z = vertices[triangle_indices[2]]; marker.points.append(p3)
+            # 确保点的总数是3的倍数
+            for index in triangle_indices:
+                p = Point()
+                p.x, p.y, p.z = vertices[index]
+                marker.points.append(p)
+        
         return marker
 
     def clear_markers(self):
