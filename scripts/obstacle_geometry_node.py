@@ -37,7 +37,7 @@ class ObstacleGeometryNode(Node):
         # self.declare_parameter('depth_image_topic', '/camera/depth/image_raw')
         self.declare_parameter('depth_image_topic', '/camera/depth_registered/image_rect')
         self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
-        self.declare_parameter('depth_camera_frame', 'camera_link')
+        self.declare_parameter('depth_camera_frame', 'camera_depth_frame')
 
         # 获取参数
         color_topic = self.get_parameter('color_image_topic').value
@@ -92,10 +92,10 @@ class ObstacleGeometryNode(Node):
     # def generate_obstacles_callback(self, request: GenerateObstacles.Request, response: GenerateObstacles.Response):
     #     """服务回调函数，执行障碍物检测和凸包生成"""
     #     if not self.camera_data_ready:
-    #         response.success = False
-    #         response.message = "相机数据尚未准备好。"
-    #         self.get_logger().warn(response.message)
-    #         return response
+            # response.success = False
+            # response.message = "相机数据尚未准备好。"
+            # self.get_logger().warn(response.message)
+            # return response
 
     #     self.get_logger().info(f"收到障碍物生成请求，目标物体为: '{request.target_object_class}'")
 
@@ -207,7 +207,9 @@ class ObstacleGeometryNode(Node):
     def generate_obstacles_callback(self, request: GenerateObstacles.Request, response: GenerateObstacles.Response):
         """服务回调函数，执行障碍物检测和凸包生成"""
         if not self.camera_data_ready:
-            # ... (这部分代码不变)
+            response.success = False
+            response.message = "相机数据尚未准备好。"
+            self.get_logger().warn(response.message)
             return response
 
         self.get_logger().info(f"收到障碍物生成请求，目标物体为: '{request.target_object_class}'")
@@ -256,8 +258,8 @@ class ObstacleGeometryNode(Node):
             # !!! 关键: 您需要根据您机器人的实际工作空间来调整这些值 !!!
             # 这些坐标是在 `camera_depth_frame` 坐标系下的。
             # X: 左右, Y: 上下, Z: 前后 (距离相机)
-            min_bound = np.array([-0.5, -0.4, 0.1])  # x, y, z
-            max_bound = np.array([0.5, 0.4, 1.0])   # x, y, z
+            min_bound = np.array([-0.5, -0.5, 0.05])  # x, y, z
+            max_bound = np.array([0.5, 0.5, 1.0])   # x, y, z
             bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
             pcd = pcd.crop(bbox)
             self.get_logger().info(f"  - 工作空间过滤后点数: {len(pcd.points)}")
@@ -336,8 +338,8 @@ class ObstacleGeometryNode(Node):
         marker.scale.y = 1.0
         marker.scale.z = 1.0
         
-        # 设置颜色（半透明红色）
-        marker.color = ColorRGBA(r=0.5, g=0.0, b=0.8, a=0.4)
+        # 设置颜色
+        marker.color = ColorRGBA(r=0.0, g=1.0, b=0.0, a=0.2) 
         
         # 获取所有的顶点和所有的三角面片索引
         vertices = np.asarray(hull.vertices)
