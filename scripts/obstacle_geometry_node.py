@@ -71,9 +71,6 @@ class ObstacleGeometryNode(Node):
         self.obstacle_names = []
 
         # 订阅和发布
-        # self.color_sub = self.create_subscription(Image, color_topic, self.color_callback, 10)
-        # self.depth_sub = self.create_subscription(Image, depth_topic, self.depth_callback, 10)
-        # self.info_sub = self.create_subscription(Image, info_topic, self.info_callback, 10)
         self.color_sub = self.create_subscription(
             Image, color_topic, self.color_callback, sensor_qos_profile
         )
@@ -115,7 +112,7 @@ class ObstacleGeometryNode(Node):
         self.clear_all_obstacles()
 
         try:
-            # 核心算法逻辑 (与您的版本完全相同)
+            # 步骤 1: 获取图像并生成初始点云
             color_cv = self.bridge.imgmsg_to_cv2(self.latest_color_image, "rgb8")
             depth_cv = self.bridge.imgmsg_to_cv2(self.latest_depth_image, "passthrough")
             cam_info = self.latest_camera_info
@@ -123,7 +120,6 @@ class ObstacleGeometryNode(Node):
             graspnet_cam = GraspNetCameraInfo(depth_cv.shape[1], depth_cv.shape[0], fx, fy, cx, cy, 1000.0)
             
             self.get_logger().info("步骤 1/5: 生成场景完整点云并过滤...")
-            # ... (这部分逻辑与上一版完全相同) ...
             full_cloud_organized = create_point_cloud_from_depth_image(depth_cv, graspnet_cam, organized=True)
             valid_depth_mask = (depth_cv > 0)
             scene_pcd = o3d.geometry.PointCloud()
@@ -131,9 +127,10 @@ class ObstacleGeometryNode(Node):
             min_bound = np.array([-0.3, -0.3, 0.05])
             max_bound = np.array([0.3, 0.3, 0.8])
             workspace_pcd = scene_pcd.crop(o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound))
+            self.get_logger().info(f"  - 工作空间内总点数: {len(workspace_pcd.points)}")
 
+            # 步骤 2: 分割目标物体并膨胀掩码
             self.get_logger().info(f"步骤 2/5: 分割目标物体 '{request.target_object_class}'...")
-            # ... (这部分逻辑与上一版完全相同) ...
             target_mask, _ = segment_objects(color_cv, target_class=request.target_object_class, return_vis=True)
             if target_mask is None: target_mask = np.zeros(color_cv.shape[:2], dtype=np.uint8)
             kernel = np.ones((13, 13), np.uint8)
@@ -145,15 +142,17 @@ class ObstacleGeometryNode(Node):
             final_target_mask = (target_mask_resized > 0) & valid_depth_mask
             target_pcd = o3d.geometry.PointCloud()
             target_pcd.points = o3d.utility.Vector3dVector(full_cloud_organized[final_target_mask])
+            self.get_logger().info(f"  - (膨胀后)目标物体点数: {len(target_pcd.points)}")
 
+            # 步骤 3: 计算障碍物点云
             self.get_logger().info("步骤 3/5: 计算障碍物点云...")
-            # ... (这部分逻辑与上一版完全相同) ...
             if len(target_pcd.points) > 0 and len(workspace_pcd.points) > 0:
                 distances = workspace_pcd.compute_point_cloud_distance(target_pcd)
                 obstacle_indices = np.where(np.asarray(distances) > 0.005)[0]
                 obstacle_pcd = workspace_pcd.select_by_index(obstacle_indices)
             else:
                 obstacle_pcd = workspace_pcd
+            self.get_logger().info(f"  - 计算后的障碍物点数: {len(obstacle_pcd.points)}")
 
             pcd = obstacle_pcd
             if len(pcd.points) < 20: 
@@ -162,51 +161,76 @@ class ObstacleGeometryNode(Node):
             pcd = pcd.voxel_down_sample(0.01)
             self.get_logger().info(f"  - 体素下采样后点数: {len(pcd.points)}")
             
+            # --- 这是被遗漏的代码块, 现在已经补全 ---
+            # 步骤 4: 聚类
             self.get_logger().info(f"步骤 4/5: 对 {len(pcd.points)} 个障碍物点进行聚类...")
-            labels = np.array(pcd.cluster_dbscan(eps=0.04, min_points=30, print_progress=False))
+            labels = np.array(pcd.cluster_dbscan(eps=0.025, min_points=30, print_progress=False))
             max_label = labels.max()
-            self.get_logger().info(f"聚类完成，发现 {max_label + 1} 个障碍物。")
+            self.get_logger().info(f"聚类完成，发现 {max_label + 1} 个初始聚类。")
+            # --- 补全结束 ---
             
-            self.get_logger().info("步骤 5/5: 生成网格，发布可视化标记并更新规划场景...")
+            # 步骤 5: 生成、拆分并发布网格
+            self.get_logger().info("步骤 5/5: 生成、拆分网格并更新规划场景...")
             marker_array = MarkerArray()
-            collision_objects = []
+            final_collision_objects = []
             
             alpha_value = 0.05
+            
             for i in range(max_label + 1):
                 cluster_indices = np.where(labels == i)[0]
                 if len(cluster_indices) < 4: continue
                 
                 cluster_pcd = pcd.select_by_index(cluster_indices)
                 try:
-                    alpha_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(cluster_pcd, alpha_value)
-                    alpha_mesh.compute_vertex_normals(); alpha_mesh.orient_triangles()
+                    initial_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(cluster_pcd, alpha_value)
+                    initial_mesh.compute_vertex_normals()
 
-                    obstacle_name = f"obstacle_{i}"
-                    # --- 核心修改: 创建CollisionObject消息, 而不是直接调用API ---
-                    co = self.create_collision_object_from_mesh(obstacle_name, alpha_mesh)
-                    collision_objects.append(co)
-                    self.obstacle_names.append(obstacle_name) # 追踪名字以便后续删除
+                    triangle_clusters, cluster_n_triangles, _ = initial_mesh.cluster_connected_triangles()
+                    triangle_clusters = np.asarray(triangle_clusters)
                     
-                    mesh_marker = self.create_mesh_marker(alpha_mesh, i)
-                    marker_array.markers.append(mesh_marker)
-                except Exception as e:
-                    self.get_logger().warn(f"为聚类 {i} 创建网格失败: {e}")
+                    max_component_label = triangle_clusters.max()
+                    for comp_idx in range(max_component_label + 1):
+                        if cluster_n_triangles[comp_idx] < 10: continue
 
-            # --- 核心修改: 一次性发布一个包含所有障碍物的PlanningScene消息 ---
-            if collision_objects:
+                        component_mesh = o3d.geometry.TriangleMesh()
+                        component_mesh.vertices = initial_mesh.vertices
+                        component_triangles = np.asarray(initial_mesh.triangles)[triangle_clusters == comp_idx]
+                        component_mesh.triangles = o3d.utility.Vector3iVector(component_triangles)
+                        component_mesh.remove_unreferenced_vertices()
+                        component_mesh.orient_triangles()
+                        
+                        obstacle_id = len(final_collision_objects)
+                        obstacle_name = f"obstacle_{obstacle_id}"
+                        
+                        co = self.create_collision_object_from_mesh(obstacle_name, component_mesh)
+                        final_collision_objects.append(co)
+                        self.obstacle_names.append(obstacle_name)
+                        
+                        mesh_marker = self.create_mesh_marker(component_mesh, obstacle_id)
+                        marker_array.markers.append(mesh_marker)
+                        
+                except Exception as e:
+                    self.get_logger().warn(f"为聚类 {i} 处理网格时发生错误: {e}")
+
+            if final_collision_objects:
                 planning_scene_msg = PlanningScene()
-                planning_scene_msg.is_diff = True # 告诉MoveIt这是一个增量更新
-                planning_scene_msg.world.collision_objects = collision_objects
+                planning_scene_msg.is_diff = True
+                planning_scene_msg.world.collision_objects = final_collision_objects
                 self.planning_scene_pub.publish(planning_scene_msg)
-                self.get_logger().info(f"已将 {len(collision_objects)} 个障碍物发布到规划场景。")
+                self.get_logger().info(f"已将 {len(final_collision_objects)} 个【独立】障碍物发布到规划场景。")
 
             self.marker_pub.publish(marker_array)
-            response.success = True; response.message = f"成功生成并发布了 {len(collision_objects)} 个障碍物。"; 
+            
+            msg = f"成功生成并发布了 {len(final_collision_objects)} 个【独立】障碍物。"
+            response.success = True; response.message = msg; self.get_logger().info(msg)
 
         except Exception as e:
-            # ... (不变)
-            ...
+            self.get_logger().error(f"生成障碍物时发生错误: {e}")
+            import traceback
+            self.get_logger().error(f"错误追溯: {traceback.format_exc()}")
+            response.success = False; response.message = f"生成障碍物失败: {e}"
         return response
+
 
     def create_collision_object_from_mesh(self, name: str, o3d_mesh: o3d.geometry.TriangleMesh) -> CollisionObject:
         """从Open3D网格创建一个CollisionObject消息"""
@@ -219,7 +243,6 @@ class ObstacleGeometryNode(Node):
         triangles = np.asarray(o3d_mesh.triangles)
         for t in triangles:
             mt = MeshTriangle()
-            # 将Numpy整数类型强制转换为Python原生int类型
             mt.vertex_indices = [int(t[0]), int(t[1]), int(t[2])]
             mesh.triangles.append(mt)
         co.meshes.append(mesh)
