@@ -161,7 +161,6 @@ class ObstacleGeometryNode(Node):
             pcd = pcd.voxel_down_sample(0.01)
             self.get_logger().info(f"  - 体素下采样后点数: {len(pcd.points)}")
             
-            # --- 这是被遗漏的代码块, 现在已经补全 ---
             # 步骤 4: 聚类
             self.get_logger().info(f"步骤 4/5: 对 {len(pcd.points)} 个障碍物点进行聚类...")
             labels = np.array(pcd.cluster_dbscan(eps=0.025, min_points=30, print_progress=False))
@@ -174,7 +173,7 @@ class ObstacleGeometryNode(Node):
             marker_array = MarkerArray()
             final_collision_objects = []
             
-            alpha_value = 0.05
+            alpha_value = 0.035
             
             for i in range(max_label + 1):
                 cluster_indices = np.where(labels == i)[0]
