@@ -13,6 +13,7 @@ import cv2
 import sys
 from typing import Optional
 import time
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 
 # --- 核心修改: 不再需要moveit_commander, 而是导入消息类型 ---
 from moveit_msgs.msg import PlanningScene, CollisionObject
@@ -56,14 +57,33 @@ class ObstacleGeometryNode(Node):
         self.latest_depth_image: Optional[Image] = None
         self.latest_camera_info: Optional[CameraInfo] = None
         self.camera_data_ready = False
+
+
+        # 使用QoS配置来确保消息传递的可靠性 ---
+        sensor_qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=QoSDurabilityPolicy.VOLATILE
+        )
         
         # --- 新增: 用于追踪已添加障碍物的列表 ---
         self.obstacle_names = []
 
         # 订阅和发布
-        self.color_sub = self.create_subscription(Image, color_topic, self.color_callback, 10)
-        self.depth_sub = self.create_subscription(Image, depth_topic, self.depth_callback, 10)
-        self.info_sub = self.create_subscription(Image, info_topic, self.info_callback, 10)
+        # self.color_sub = self.create_subscription(Image, color_topic, self.color_callback, 10)
+        # self.depth_sub = self.create_subscription(Image, depth_topic, self.depth_callback, 10)
+        # self.info_sub = self.create_subscription(Image, info_topic, self.info_callback, 10)
+        self.color_sub = self.create_subscription(
+            Image, color_topic, self.color_callback, sensor_qos_profile
+        )
+        self.depth_sub = self.create_subscription(
+            Image, depth_topic, self.depth_callback, sensor_qos_profile
+        )
+        self.info_sub = self.create_subscription(
+            CameraInfo, info_topic, self.info_callback, sensor_qos_profile
+        )
+        
         self.marker_pub = self.create_publisher(MarkerArray, 'obstacle_markers', 10)
         
         # --- 核心修改: 创建一个PlanningScene的发布者 ---
