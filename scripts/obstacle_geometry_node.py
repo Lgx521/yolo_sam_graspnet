@@ -83,7 +83,7 @@ class ObstacleGeometryNode(Node):
         self.info_sub = self.create_subscription(
             CameraInfo, info_topic, self.info_callback, sensor_qos_profile
         )
-        
+
         self.marker_pub = self.create_publisher(MarkerArray, 'obstacle_markers', 10)
         
         # --- 核心修改: 创建一个PlanningScene的发布者 ---
@@ -218,7 +218,10 @@ class ObstacleGeometryNode(Node):
             p = Point(); p.x, p.y, p.z = v; mesh.vertices.append(p)
         triangles = np.asarray(o3d_mesh.triangles)
         for t in triangles:
-            mt = MeshTriangle(); mt.vertex_indices = [t[0], t[1], t[2]]; mesh.triangles.append(mt)
+            mt = MeshTriangle()
+            # 将Numpy整数类型强制转换为Python原生int类型
+            mt.vertex_indices = [int(t[0]), int(t[1]), int(t[2])]
+            mesh.triangles.append(mt)
         co.meshes.append(mesh)
         mesh_pose = Pose(); mesh_pose.orientation.w = 1.0; co.mesh_poses.append(mesh_pose)
         return co
