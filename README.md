@@ -152,6 +152,12 @@ Next, call the obstacle generation service. This service will:
 3. Model the remaining objects (obstacles) as tight-fitting Alpha Shapes.
 4. Publish the obstacle models to RViz for visualization.
 
+Run the obstacle geometry node  
+
+```bash
+ros2 run kinova_graspnet_ros2 obstacle_geometry_node.py
+```
+
 ```bash
 # Call the service, specifying the same target object to exclude it from obstacles
 ros2 service call /generate_obstacles kinova_graspnet_ros2/srv/GenerateObstacles "{target_object_class: 'apple'}"
