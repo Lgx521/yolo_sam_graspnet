@@ -177,7 +177,7 @@ class ObstacleGeometryNode(Node):
             self.get_logger().info(f"  - 体素下采样后点数: {len(pcd.points)}")
                  
             self.get_logger().info(f"步骤 4/5: 对 {len(pcd.points)} 个障碍物点进行聚类...")
-            labels = np.array(pcd.cluster_dbscan(eps=0.04, min_points=20, print_progress=True))
+            labels = np.array(pcd.cluster_dbscan(eps=0.04, min_points=30, print_progress=True))
             
             max_label = labels.max()
             noise_points = np.sum(np.array(labels) == -1)
@@ -270,7 +270,6 @@ class ObstacleGeometryNode(Node):
         return marker
 
     def clear_markers(self):
-        # ... (此函数与上一版相同，无需修改)
         marker_array = MarkerArray()
         clear_marker = Marker()
         clear_marker.header.frame_id = self.camera_frame
@@ -280,7 +279,6 @@ class ObstacleGeometryNode(Node):
         self.get_logger().info("已清除所有障碍物标记。")
 
 def main(args=None):
-    # ... (此函数与上一版相同，无需修改)
     rclpy.init(args=args)
     try:
         node = ObstacleGeometryNode()

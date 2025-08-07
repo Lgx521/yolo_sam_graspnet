@@ -10,6 +10,7 @@ The system consists of several ROS2 nodes that work together:
 2. **Kinova Grasp Controller** - Executes detected grasps using MoveIt2 motion planning with automatic coordinate transformation
 3. **Coordinate Transformer** - Handles transformations between camera and robot frames via TF2
 4. **Grasp Visualizer** - Provides RViz visualization of detected grasps
+5.  **Obstacle Geometry Node** - Models the geometry of obstacles (all non-target objects) using Alpha Shapes for collision-aware motion planning.
 
 ## Key Features
 
@@ -19,6 +20,7 @@ The system consists of several ROS2 nodes that work together:
 - **Configurable Target Objects**: Specify which objects to grasp via service parameters
 - **Dual Camera Support**: Separate intrinsics for RGB and depth cameras
 - **Complete Grasp Pipeline**: From detection to execution in two simple service calls
+- **Advanced Obstacle Modeling**: Generates non-convex Alpha Shapes of obstacles for tighter, more accurate collision models, enabling planning in cluttered environments.
 
 ## Prerequisites
 
@@ -128,6 +130,9 @@ The system will automatically:
 - Start services for grasp detection and execution
 
 ### Step 3: Execute Grasp Detection
+
+#### 3.1: Detect Grasp Poses
+First, run the grasp detection client to find potential grasps for your target object. This step also visualizes the grasps in RViz.  
 ```bash
 # Detect grasps for a specific object (e.g., bottle)
 ros2 run kinova_graspnet_ros2 detect_grasps_client.py bottle 10
@@ -136,7 +141,27 @@ ros2 run kinova_graspnet_ros2 detect_grasps_client.py bottle 10
 ros2 run kinova_graspnet_ros2 detect_grasps_client.py "" 10
 ```
 
-The client will display formatted results and provide ready-to-use execution commands.
+The client will display formatted results and provide ready-to-use execution commands.  
+Copy your desired grasp command, but do not execute it yet.
+
+
+#### 3.2: Generate and Visualize Obstacles
+Next, call the obstacle generation service. This service will:  
+1. Identify all objects in the scene.
+2. Subtract the target object (e.g., 'apple').
+3. Model the remaining objects (obstacles) as tight-fitting Alpha Shapes.
+4. Publish the obstacle models to RViz for visualization.
+
+```bash
+# Call the service, specifying the same target object to exclude it from obstacles
+ros2 service call /generate_obstacles kinova_graspnet_ros2/srv/GenerateObstacles "{target_object_class: 'apple'}"
+```
+
+Now, in RViz, you should see purple, form-fitting meshes around all obstacles.
+
+
+
+
 
 ### Step 4: Execute Grasp
 ```bash
@@ -171,6 +196,14 @@ ros2 service call /execute_grasp kinova_graspnet_ros2/srv/ExecuteGrasp \
 - `execution_time` (float): Time taken for execution
 - `final_pose` (PoseStamped): Final robot pose
 
+### Obstacle Generation Service (`/generate_obstacles`)
+**Input:**
+- `target_object_class` (string): The object to be grasped, which will be excluded from the obstacle set.
+
+**Output:**
+- `success` (bool): Generation success status.
+- `message` (string): A descriptive message about the result.
+
 ### Additional Services
 - `/test_transforms`: Test coordinate transformations
 - `/auto_grasp`: Placeholder for full automation (not implemented)
@@ -195,6 +228,7 @@ ros2 service call /test_transforms std_srvs/srv/Trigger
 - `/grasp_markers` (visualization_msgs/MarkerArray): Grasp visualizations for RViz
 - `/grasp_point_cloud` (sensor_msgs/PointCloud2): Processed point cloud
 - `/yolo_detection_visualization` (sensor_msgs/Image): YOLO detection results with bounding boxes, labels, and confidence scores
+- `/obstacle_markers` (visualization_msgs/MarkerArray): Visualizations of obstacle geometry (Alpha Shapes) for RViz.
 
 ### Subscribed Topics  
 - `/camera/color/image_raw` (sensor_msgs/Image): RGB images
@@ -228,13 +262,21 @@ ros2 service call /test_transforms std_srvs/srv/Trigger
    - Verify MoveIt is running: `ros2 topic list | grep move_group`
    - Check robot URDF and collision geometry
    - Ensure robot is not in collision
-
+6. **Obstacles are not detected or are inaccurate**
+   - The algorithm relies on a "point cloud subtraction" method. Ensure the `target_object_class` is segmented correctly.
+   - If obstacles are too small or too large, adjust the `min_bound`/`max_bound` workspace parameters and `voxel_size` in the `obstacle_geometry_node.py` script.
+   - If the obstacle shape is too "blobby" or fragmented, fine-tune the `alpha_value` in the same script.
 
 ### Visualizing in RViz2
 To view the YOLO detection results in RViz2:
 1. Add an Image display
 2. Set the topic to `/yolo_detection_visualization`
 3. The image will show bounding boxes, object classes, and confidence scores for detected objects
+
+To view the obstacle models in RViz2:
+1. Add a MarkerArray display.
+2. Set the topic to `/obstacle_markers`.
+3. The obstacles will appear as semi-transparent purple meshes.
 
 **实时检测**: 启动launch文件后，系统会自动以2Hz的频率进行YOLO检测并发布可视化结果，无需额外调用服务。
 
