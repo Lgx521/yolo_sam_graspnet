@@ -233,16 +233,20 @@ def main():
     # --- 用户配置区 ---
     # 请在这里修改您的文件路径和相机参数
     # ==========================================================================
+
+    base = '/home/roar/Downloads/imagesd/'
+    num = '0000'
     cfgs = SimpleNamespace(
+
         # 1. 输入数据路径 (请使用绝对路径或相对于此脚本的路径)
-        color_path = "path/to/your/color_image.png", # 例如: "/home/user/data/scene1/color.png"
-        depth_path = "path/to/your/depth_image.png", # 例如: "/home/user/data/scene1/depth.png"
+        color_path = base+num+'.png', # 例如: "/home/user/data/scene1/color.png"
+        depth_path = base+num+'_depth.png', # 例如: "/home/user/data/scene1/depth.png"
 
         # 2. 相机内参 (请替换为您相机的值)
-        fx = 615.8,  # X轴焦距
-        fy = 615.8,  # Y轴焦距
-        cx = 320.0,  # X轴主点
-        cy = 240.0,  # Y轴主点
+        fx = 2612.345947,  # X轴焦距
+        fy = 2609.465576,  # Y轴焦距
+        cx = 946.433838,  # X轴主点
+        cy = 96.968155,  # Y轴主点
         factor_depth = 1000.0, # 深度图像的缩放因子。如果深度图中1000代表1米，则此值为1000.0
 
         # 3. GraspNet模型和推理参数 (通常无需修改)
