@@ -109,13 +109,11 @@ coordinate_transformer:
     # 6. Camera-gripper axes: Z same direction, X and Y reversed
     publish_static_transforms: false
     
-    # Alternative: transformation matrix (if preferred over translation/rotation)
-    # camera_to_ee_matrix: [
-    #   [1.0, 0.0, 0.0, 0.05],
-    #   [0.0, 1.0, 0.0, 0.0],
-    #   [0.0, 0.0, 1.0, 0.1],
-    #   [0.0, 0.0, 0.0, 1.0]
-    # ]
+    # Alternative: transformation matrix (flattened 4x4, meters)
+    camera_to_ee_matrix: [0.0, -1.0, 0.0, 0.060,
+                          1.0,  0.0, 0.0, -0.400,
+                          0.0,  0.0, 1.0, -0.110,
+                          0.0,  0.0, 0.0, 1.0]
 
 yolo_detection_node:
   ros__parameters:

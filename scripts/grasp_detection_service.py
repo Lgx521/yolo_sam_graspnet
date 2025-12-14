@@ -4,9 +4,9 @@ from datetime import datetime
 import os
 import sys
 # Add graspnet-baseline to Python path
-sys.path.insert(0, '/home/roar/graspnet/graspnet-baseline')
-sys.path.insert(0, '/home/roar/graspnet/graspnet-baseline/models')
-sys.path.insert(0, '/home/roar/graspnet/graspnet-baseline/utils')
+sys.path.insert(0, '/home/sgan/Grasp/graspnet-baseline')
+sys.path.insert(0, '/home/sgan/Grasp/graspnet-baseline/models')
+sys.path.insert(0, '/home/sgan/Grasp/graspnet-baseline/utils')
 import numpy as np
 import torch
 import time
@@ -38,8 +38,14 @@ import open3d as o3d
 import scipy.io as scio
 
 
-sys.path.append('/home/roar/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils') 
-from cv_segmentation import segment_objects
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+PACKAGE_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+if PACKAGE_ROOT not in sys.path:
+    sys.path.insert(0, PACKAGE_ROOT)
+from utils.cv_segmentation import segment_objects
 
 
 # Import custom service definitions
@@ -61,21 +67,20 @@ class GraspDetectionService(Node):
         self.declare_parameter('voxel_size', 0.01)
         self.declare_parameter('device', 'cuda:0')
         
-        # RGB Camera parameters (1920x1080)
-        self.declare_parameter('rgb_camera_intrinsics.fx', 2612.345947)
-        self.declare_parameter('rgb_camera_intrinsics.fy', 2609.465576)
-        self.declare_parameter('rgb_camera_intrinsics.cx', 946.433838)
-        self.declare_parameter('rgb_camera_intrinsics.cy', 96.968155)
-        self.declare_parameter('rgb_camera_intrinsics.width', 1920)
-        self.declare_parameter('rgb_camera_intrinsics.height', 1080)
+        # RGB/Depth Camera intrinsics：完全依赖config提供，默认不填
+        self.declare_parameter('rgb_camera_intrinsics.fx', None)
+        self.declare_parameter('rgb_camera_intrinsics.fy', None)
+        self.declare_parameter('rgb_camera_intrinsics.cx', None)
+        self.declare_parameter('rgb_camera_intrinsics.cy', None)
+        self.declare_parameter('rgb_camera_intrinsics.width', None)
+        self.declare_parameter('rgb_camera_intrinsics.height', None)
         
-        # Depth Camera parameters (480x270)
-        self.declare_parameter('depth_camera_intrinsics.fx', 336.190430)
-        self.declare_parameter('depth_camera_intrinsics.fy', 336.190430)
-        self.declare_parameter('depth_camera_intrinsics.cx', 230.193512)
-        self.declare_parameter('depth_camera_intrinsics.cy', 138.111130)
-        self.declare_parameter('depth_camera_intrinsics.width', 480)
-        self.declare_parameter('depth_camera_intrinsics.height', 270)
+        self.declare_parameter('depth_camera_intrinsics.fx', None)
+        self.declare_parameter('depth_camera_intrinsics.fy', None)
+        self.declare_parameter('depth_camera_intrinsics.cx', None)
+        self.declare_parameter('depth_camera_intrinsics.cy', None)
+        self.declare_parameter('depth_camera_intrinsics.width', None)
+        self.declare_parameter('depth_camera_intrinsics.height', None)
         
         # Target object class for segmentation
         self.declare_parameter('target_object_class', '')
@@ -86,9 +91,9 @@ class GraspDetectionService(Node):
         self.declare_parameter('base_frame', 'base_link')
         
         # Camera topic configuration
-        self.declare_parameter('color_image_topic', '/camera/color/image_raw')
-        self.declare_parameter('depth_image_topic', '/camera/depth/image_raw')
-        self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
+        self.declare_parameter('color_image_topic', '/camera/camera/color/image_raw')
+        self.declare_parameter('depth_image_topic', '/camera/camera/depth/image_raw')
+        self.declare_parameter('camera_info_topic', '/camera/camera/color/camera_info')
         
         # Get parameters
         self.checkpoint_path = self.get_parameter('checkpoint_path').value
@@ -97,25 +102,9 @@ class GraspDetectionService(Node):
         self.voxel_size = self.get_parameter('voxel_size').value
         device_name = self.get_parameter('device').value
         
-        # Get RGB camera parameters
-        self.rgb_camera_params = {
-            'fx': self.get_parameter('rgb_camera_intrinsics.fx').value,
-            'fy': self.get_parameter('rgb_camera_intrinsics.fy').value,
-            'cx': self.get_parameter('rgb_camera_intrinsics.cx').value,
-            'cy': self.get_parameter('rgb_camera_intrinsics.cy').value,
-            'width': self.get_parameter('rgb_camera_intrinsics.width').value,
-            'height': self.get_parameter('rgb_camera_intrinsics.height').value
-        }
-        
-        # Get depth camera parameters
-        self.depth_camera_params = {
-            'fx': self.get_parameter('depth_camera_intrinsics.fx').value,
-            'fy': self.get_parameter('depth_camera_intrinsics.fy').value,
-            'cx': self.get_parameter('depth_camera_intrinsics.cx').value,
-            'cy': self.get_parameter('depth_camera_intrinsics.cy').value,
-            'width': self.get_parameter('depth_camera_intrinsics.width').value,
-            'height': self.get_parameter('depth_camera_intrinsics.height').value
-        }
+        # Get camera parameters from config file
+        self.rgb_camera_params = self._read_camera_intrinsics('rgb_camera_intrinsics')
+        self.depth_camera_params = self._read_camera_intrinsics('depth_camera_intrinsics')
         
         # Get target object class
         self.default_target_object_class = self.get_parameter('target_object_class').value
@@ -216,6 +205,17 @@ class GraspDetectionService(Node):
         """Callback for camera info"""
         self.latest_camera_info = msg
         self._check_images_ready()
+
+    def _read_camera_intrinsics(self, prefix: str) -> dict:
+        """从参数服务器读取相机内参，若缺失则报错"""
+        keys = ['fx', 'fy', 'cx', 'cy', 'width', 'height']
+        params = {}
+        for k in keys:
+            val = self.get_parameter(f'{prefix}.{k}').value
+            if val is None:
+                raise ValueError(f'参数 {prefix}.{k} 未在config中设置')
+            params[k] = val
+        return params
     
     
     def _check_images_ready(self):

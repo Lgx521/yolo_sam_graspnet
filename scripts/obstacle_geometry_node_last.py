@@ -7,6 +7,14 @@ import open3d as o3d
 import cv2
 import time
 from scipy.spatial.transform import Rotation as R
+import os, sys
+
+
+# Import the segmentation module (ensure parent of utils/ is on sys.path)
+PACKAGE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PACKAGE_ROOT not in sys.path:
+    sys.path.insert(0, PACKAGE_ROOT)
+from utils.cv_segmentation import SmartSegmentation
 
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
@@ -21,12 +29,10 @@ from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 
-# 【修复2】导入traceback模块用于打印详细错误
 import traceback
 
 import sys
-sys.path.append('/home/roar/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils')
-from cv_segmentation import SmartSegmentation
+sys.path.append('/home/sgan/Grasp/graspnet-baseline/kinova_graspnet_ros2/utils')
 from kinova_graspnet_ros2.srv import BuildObstacles
 
 try:

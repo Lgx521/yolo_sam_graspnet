@@ -15,13 +15,18 @@ from typing import Optional
 import time
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 
-# --- 核心修改: 不再需要moveit_commander, 而是导入消息类型 ---
+
+# Import the segmentation module (ensure parent of utils/ is on sys.path)
+PACKAGE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PACKAGE_ROOT not in sys.path:
+    sys.path.insert(0, PACKAGE_ROOT)
+
 from moveit_msgs.msg import PlanningScene, CollisionObject
 from shape_msgs.msg import Mesh, MeshTriangle
 
 # 假设您的 cv_segmentation.py 在这个路径下
 sys.path.append('/home/roar/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils')
-from cv_segmentation import segment_objects
+from utils.cv_segmentation import segment_objects
 
 # 导入我们创建的服务
 from kinova_graspnet_ros2.srv import GenerateObstacles

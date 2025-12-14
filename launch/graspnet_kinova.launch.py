@@ -11,7 +11,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
     # Set up GraspNet environment
-    graspnet_baseline_path = '/home/roar/graspnet/graspnet-baseline'
+    graspnet_baseline_path = '/home/sgan/Grasp/graspnet-baseline'
     
     # Environment variables for GraspNet
     set_pythonpath = SetEnvironmentVariable(
@@ -22,7 +22,7 @@ def generate_launch_description():
     # Declare launch arguments
     checkpoint_path_arg = DeclareLaunchArgument(
         'checkpoint_path',
-        default_value='/home/roar/Downloads/checkpoint-rs.tar',
+        default_value='/home/sgan/Grasp/checkpoint-rs.tar',
         description='Path to GraspNet model checkpoint'
     )
     
@@ -98,10 +98,13 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
-            'publish_static_transforms': False,
-            # Example hand-eye calibration values - replace with actual calibration
-            'camera_to_ee_translation': [0, 0.05639, -0.00305],
-            'camera_to_ee_rotation': [0.0, 0.0, 0.0, 1.0]  # quaternion [x,y,z,w]
+            # Publish static TF from end-effector to D435彩色相机
+            'publish_static_transforms': True,
+            # T_camera_to_ee (mm) = [[0,-1,0,60],[1,0,0,-40],[0,0,1,-110]]
+            # → T_ee_to_camera (m) translation = [0.04, 0.06, 0.11]
+            # → rotation = -90° about Z → quaternion [0, 0, -0.70710678, 0.70710678]
+            'camera_to_ee_translation': [0.04, 0.06, 0.11],
+            'camera_to_ee_rotation': [0.0, 0.0, -0.70710678, 0.70710678]  # quaternion [x,y,z,w]
         }]
     )
     
@@ -143,9 +146,9 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
-            'color_image_topic': '/camera/color/image_raw',
+            'color_image_topic': '/camera/camera/color/image_raw',
             'target_object_class': '',  # 检测所有对象，可以改为特定类别如 'bottle'
-            'detection_fps': 2.0,  # 检测频率 (Hz)
+            'detection_fps': 5.0,  # 检测频率 (Hz)
             'confidence_threshold': 0.25
         }]
     )

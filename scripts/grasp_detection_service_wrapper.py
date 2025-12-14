@@ -4,7 +4,7 @@ import sys
 import os
 
 # Add graspnet-baseline to Python path
-graspnet_path = '/home/roar/graspnet/graspnet-baseline'
+graspnet_path = '/home/sgan/Grasp/graspnet-baseline'
 if graspnet_path not in sys.path:
     sys.path.insert(0, graspnet_path)
 
