@@ -11,9 +11,9 @@ warnings.filterwarnings("ignore")
 os.environ['YOLO_VERBOSE'] = 'False'
 
 # Add graspnet-baseline to Python path
-sys.path.insert(0, '/home/roar/graspnet/graspnet-baseline')
-sys.path.insert(0, '/home/roar/graspnet/graspnet-baseline/models')
-sys.path.insert(0, '/home/roar/graspnet/graspnet-baseline/utils')
+sys.path.insert(0, '/home/sgan/graspnet/graspnet-baseline')
+sys.path.insert(0, '/home/sgan/graspnet/graspnet-baseline/models')
+sys.path.insert(0, '/home/sgan/graspnet/graspnet-baseline/utils')
 
 import numpy as np
 import cv2
@@ -26,7 +26,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
 # Import the segmentation module
-sys.path.append('/home/roar/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils')
+sys.path.append('/home/sgan/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils')
 
 
 
