@@ -59,7 +59,7 @@ class YoloDetectionNode(Node):
         self.declare_parameter('color_image_topic', '/camera/camera/color/image_raw')
         self.declare_parameter('target_object_class', '')  # 空字符串表示检测所有对象
         self.declare_parameter('detection_fps',10.0)  # 检测频率 (Hz)
-        self.declare_parameter('confidence_threshold', 0.25)
+        self.declare_parameter('confidence_threshold', 0.5)
         self.declare_parameter('verbose', False)  # 控制是否输出详细信息
         # 可强制指定推理设备，默认尝试 GPU
         self.declare_parameter('device', 'cuda:0')

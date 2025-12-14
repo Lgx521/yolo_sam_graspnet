@@ -45,7 +45,8 @@ sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import torch
 # --- 确保GraspNet相关模块在PYTHONPATH中 ---
 # 您可能需要根据您的GraspNet安装路径调整这里
-GRASPNet_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) # 假设脚本在graspnet-baseline/的子目录
+# GRASPNet_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) # 假设脚本在graspnet-baseline/的子目录
+GRASPNet_ROOT = '/home/sgan/Grasp/graspnet-baseline'
 sys.path.append(GRASPNet_ROOT)
 sys.path.append(os.path.join(GRASPNet_ROOT, 'models'))
 sys.path.append(os.path.join(GRASPNet_ROOT, 'utils'))
@@ -68,9 +69,9 @@ class GraspNetProcessorNode(Node):
         self.get_logger().info("模型加载成功！")
 
         # 2. 设置ROS订阅者
-        color_topic = "/camera/color/image_raw"
-        depth_topic = "/camera/depth_registered/image_rect"
-        info_topic = "/camera/color/camera_info"
+        color_topic = "/camera/camera/color/image_raw"
+        depth_topic = "/camera/camera/depth/image_rect_raw"
+        info_topic = "/camera/camera/color/camera_info"
         
         self.color_sub = message_filters.Subscriber(self, Image, color_topic)
         self.depth_sub = message_filters.Subscriber(self, Image, depth_topic)
@@ -88,9 +89,7 @@ class GraspNetProcessorNode(Node):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         net.to(device)
 
-        script_path = os.path.realpath(__file__)
-        folder_path = os.path.dirname(script_path)
-        path = os.path.join(folder_path, "checkpoint-rs.tar")
+        path = '/home/sgan/Grasp/checkpoint-rs.tar'
         checkpoint = torch.load(path)
         net.load_state_dict(checkpoint['model_state_dict'])
         start_epoch = checkpoint['epoch']
@@ -235,7 +234,7 @@ class GraspNetProcessorNode(Node):
 
         # 如果没有抓取，则直接显示点云
         if len(gg_top_k) == 0:
-            o3d.visualization.draw_geometries([cloud])
+            self._show_geometries([cloud], window_name='GraspNet Scene (no grasps)')
             return
 
         # 准备颜色映射
@@ -258,7 +257,35 @@ class GraspNetProcessorNode(Node):
             color = cmap(norm_scores[i])[:3] # 取RGB部分，忽略Alpha
             grippers.append(grasp.to_open3d_geometry(color=color))
 
-        o3d.visualization.draw_geometries([cloud, *grippers])
+        self._show_geometries([cloud, *grippers], window_name='GraspNet Grasps')
+
+    def _show_geometries(self, geometries, window_name='Open3D'):
+        """
+        封装Open3D展示，若GUI不可用则自动保存截图，避免无画面。
+        """
+        try:
+            vis = o3d.visualization.Visualizer()
+            vis.create_window(window_name=window_name, width=1280, height=720, visible=True)
+            for g in geometries:
+                vis.add_geometry(g)
+            vis.get_render_option().background_color = np.asarray([0, 0, 0])
+            vis.run()
+            vis.destroy_window()
+        except Exception as e:
+            # GUI环境不可用时，退化为保存截图
+            try:
+                vis = o3d.visualization.Visualizer()
+                vis.create_window(visible=False)
+                for g in geometries:
+                    vis.add_geometry(g)
+                vis.poll_events()
+                vis.update_renderer()
+                screenshot_path = os.path.join(os.getcwd(), 'open3d_render.png')
+                vis.capture_screen_image(screenshot_path, do_render=True)
+                vis.destroy_window()
+                self.get_logger().warn(f'Open3D窗口不可用，已保存截图: {screenshot_path}, err={e}')
+            except Exception as ee:
+                self.get_logger().error(f'Open3D可视化失败，且截图失败: {ee}')
 
     def shutdown(self):
         self.get_logger().info('正在关闭节点...')

@@ -25,13 +25,21 @@ class CoordinateTransformer(Node):
         
         # Declare parameters for hand-eye calibration
         self.declare_parameter('publish_static_transforms', True)
-        self.declare_parameter('camera_to_ee_translation', [0.0, 0.0, 0.0])
-        self.declare_parameter('camera_to_ee_rotation', [0.0, 0.0, 0.0, 1.0])  # quaternion
+        self.declare_parameter('ee_frame', 'end_effector_link')
+        self.declare_parameter('camera_frame', 'camera_link')
+        # 4x4 matrix flattened (16 elements), T_camera_to_ee
+        self.declare_parameter('camera_to_ee_matrix', [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        ])
         
         # Get parameters
         self.publish_static = self.get_parameter('publish_static_transforms').value
-        cam_to_ee_trans = self.get_parameter('camera_to_ee_translation').value
-        cam_to_ee_rot = self.get_parameter('camera_to_ee_rotation').value
+        self.ee_frame = self.get_parameter('ee_frame').value
+        self.camera_frame = self.get_parameter('camera_frame').value
+        cam_to_ee_matrix_flat = self.get_parameter('camera_to_ee_matrix').value
         
         # Initialize TF2
         self.tf_buffer = Buffer()
@@ -40,28 +48,46 @@ class CoordinateTransformer(Node):
         
         # Publish static transform if configured
         if self.publish_static:
-            self.publish_camera_to_ee_transform(cam_to_ee_trans, cam_to_ee_rot)
+            self.publish_camera_to_ee_transform_from_matrix(cam_to_ee_matrix_flat)
         
         self.get_logger().info('Coordinate transformer initialized')
     
-    def publish_camera_to_ee_transform(self, translation: list, rotation_quat: list):
-        """Publish static transform from camera to end effector"""
+    def publish_camera_to_ee_transform_from_matrix(self, matrix_flat: list):
+        """
+        Publish static transform from end_effector_link to camera_link.
+        Input: T_camera_to_ee (4x4 flattened), we need T_ee_to_camera for TF.
+        """
+        # Reshape to 4x4
+        T_cam_to_ee = np.array(matrix_flat).reshape(4, 4)
+        
+        # TF needs parent→child, i.e., ee→camera, so invert T_camera_to_ee
+        T_ee_to_cam = np.linalg.inv(T_cam_to_ee)
+        
+        # Extract translation and rotation
+        translation = T_ee_to_cam[:3, 3]
+        rotation = R.from_matrix(T_ee_to_cam[:3, :3])
+        quat = rotation.as_quat()  # [x, y, z, w]
+        
         static_transform = TransformStamped()
         static_transform.header.stamp = self.get_clock().now().to_msg()
-        static_transform.header.frame_id = 'robotiq_85_base_link'
-        static_transform.child_frame_id = 'camera_link'
+        static_transform.header.frame_id = self.ee_frame  # parent: end_effector_link
+        static_transform.child_frame_id = self.camera_frame  # child: camera_link
         
-        static_transform.transform.translation.x = translation[0]
-        static_transform.transform.translation.y = translation[1]
-        static_transform.transform.translation.z = translation[2]
+        static_transform.transform.translation.x = float(translation[0])
+        static_transform.transform.translation.y = float(translation[1])
+        static_transform.transform.translation.z = float(translation[2])
         
-        static_transform.transform.rotation.x = rotation_quat[0]
-        static_transform.transform.rotation.y = rotation_quat[1]
-        static_transform.transform.rotation.z = rotation_quat[2]
-        static_transform.transform.rotation.w = rotation_quat[3]
+        static_transform.transform.rotation.x = float(quat[0])
+        static_transform.transform.rotation.y = float(quat[1])
+        static_transform.transform.rotation.z = float(quat[2])
+        static_transform.transform.rotation.w = float(quat[3])
         
         self.static_broadcaster.sendTransform(static_transform)
-        self.get_logger().info('Published camera to end-effector transform')
+        self.get_logger().info(
+            f'Published static TF: {self.ee_frame} -> {self.camera_frame}\n'
+            f'  Translation: [{translation[0]:.4f}, {translation[1]:.4f}, {translation[2]:.4f}] m\n'
+            f'  Quaternion:  [{quat[0]:.4f}, {quat[1]:.4f}, {quat[2]:.4f}, {quat[3]:.4f}]'
+        )
     
     def grasp_to_gripper_transform(self, grasp_in_camera: np.ndarray) -> np.ndarray:
         """

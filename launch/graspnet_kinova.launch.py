@@ -87,25 +87,22 @@ def generate_launch_description():
         ]
     )
     
-    # # Coordinate transformer node
-    '''
-    Find wheather this is wrong or not
-    '''
+    # Coordinate transformer node - 发布 end_effector_link -> camera_link 静态TF
     coordinate_transformer_node = Node(
         package='kinova_graspnet_ros2',
         executable='coordinate_transformer.py',
         name='coordinate_transformer',
         output='screen',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-            # Publish static TF from end-effector to D435彩色相机
-            'publish_static_transforms': True,
-            # T_camera_to_ee (mm) = [[0,-1,0,60],[1,0,0,-40],[0,0,1,-110]]
-            # → T_ee_to_camera (m) translation = [0.04, 0.06, 0.11]
-            # → rotation = -90° about Z → quaternion [0, 0, -0.70710678, 0.70710678]
-            'camera_to_ee_translation': [0.04, 0.06, 0.11],
-            'camera_to_ee_rotation': [0.0, 0.0, -0.70710678, 0.70710678]  # quaternion [x,y,z,w]
-        }]
+        parameters=[
+            PathJoinSubstitution([
+                FindPackageShare('kinova_graspnet_ros2'),
+                'config',
+                'graspnet_params.yaml'
+            ]),
+            {
+                'use_sim_time': use_sim_time,
+            }
+        ]
     )
     
     # Grasp visualizer node

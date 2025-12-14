@@ -72,7 +72,7 @@ kinova_grasp_controller:
     # Robot configuration
     planning_group: "manipulator"
     base_frame: "base_link"
-    ee_frame: "gripper_base_link"  # 夹爪安装位置
+    ee_frame: "tool_frame"  # 机械臂末端工具坐标系
     gripper_palm_frame: "gripper_palm_center"  
     
     # Camera frame configuration
@@ -99,26 +99,23 @@ kinova_grasp_controller:
 
 coordinate_transformer:
   ros__parameters:
-    # Note: All coordinate transformations are read from TF tree
-    # The physical relationships between frames are:
-    # 1. RGB camera frame: camera_color_frame
-    # 2. Depth camera frame: camera_depth_frame  
-    # 3. Base coordinate: base_link
-    # 4. Gripper mount: robotiq_85_base_link
-    # 5. Gripper palm center: 8.1cm offset from mount in +Z direction
-    # 6. Camera-gripper axes: Z same direction, X and Y reversed
-    publish_static_transforms: false
+    # 发布静态TF: tool_frame -> camera_link
+    # camera_link 是 Realsense 驱动发布的根坐标系，避免与驱动发布的TF冲突
+    publish_static_transforms: true
+    ee_frame: "tool_frame"
+    camera_frame: "camera_link"
     
-    # Alternative: transformation matrix (flattened 4x4, meters)
-    camera_to_ee_matrix: [0.0, -1.0, 0.0, 0.060,
-                          1.0,  0.0, 0.0, -0.400,
-                          0.0,  0.0, 1.0, -0.110,
-                          0.0,  0.0, 0.0, 1.0]
+    # T_camera_link_to_tool 变换矩阵 (4x4 扁平化, 单位: 米)
+    # 由 T_camera_color_to_tool 和 T_camera_color_to_camera_link 计算得到
+    camera_to_ee_matrix: [0.0, 0.0, 1.0, 0.11,
+                          -1.0, 0.0, 0.0, -0.017,
+                          0.0, -1.0, 0.0, -0.057,
+                          0.0, 0.0, 0.0, 1.0]
 
 yolo_detection_node:
   ros__parameters:
     color_image_topic: "/camera/camera/color/image_raw"
     target_object_class: ""     # 空字符串表示检测所有对象
     detection_fps: 10           # 默认实时检测频率
-    confidence_threshold: 0.25
+    # confidence_threshold: 0.5
     verbose: false
