@@ -52,6 +52,13 @@ class SmartSegmentation:
                 save=False
             )
             self._sam_predictor = SAMPredictor(overrides=overrides)
+            # 将 SAM 模型迁移到指定设备
+            try:
+                if hasattr(self._sam_predictor, "model") and hasattr(self._sam_predictor.model, "model"):
+                    self._sam_predictor.model.model.to(self.device)
+            except Exception:
+                # 安全兜底，避免因设备迁移异常导致崩溃
+                pass
         return self._sam_predictor
     
     def _init_yolo(self):
@@ -80,7 +87,8 @@ class SmartSegmentation:
             model.set_classes([target_class])
         
         # 执行检测
-        results = model.predict(image)
+        # 指定设备运行，尽量避免回退到 CPU
+        results = model.predict(image, device=self.device)
         boxes = results[0].boxes
         vis_img = results[0].plot()
         

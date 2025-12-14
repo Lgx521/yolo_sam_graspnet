@@ -11,9 +11,9 @@ warnings.filterwarnings("ignore")
 os.environ['YOLO_VERBOSE'] = 'False'
 
 # Add graspnet-baseline to Python path
-sys.path.insert(0, '/home/sgan/graspnet/graspnet-baseline')
-sys.path.insert(0, '/home/sgan/graspnet/graspnet-baseline/models')
-sys.path.insert(0, '/home/sgan/graspnet/graspnet-baseline/utils')
+sys.path.insert(0, '/home/sgan/Grasp/graspnet-baseline')
+sys.path.insert(0, '/home/sgan/Grasp/graspnet-baseline/models')
+sys.path.insert(0, '/home/sgan/Grasp/graspnet-baseline/utils')
 
 import numpy as np
 import cv2
@@ -25,8 +25,10 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
-# Import the segmentation module
-sys.path.append('/home/sgan/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils')
+# Import the segmentation module (ensure parent of utils/ is on sys.path)
+PACKAGE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PACKAGE_ROOT not in sys.path:
+    sys.path.insert(0, PACKAGE_ROOT)
 
 
 
@@ -53,11 +55,14 @@ class YoloDetectionNode(Node):
         super().__init__('yolo_detection_node')
         
         # Declare parameters
-        self.declare_parameter('color_image_topic', '/camera/color/image_raw')
+        # 默认值与 config/graspnet_params.yaml 中 yolo_detection_node 段保持一致
+        self.declare_parameter('color_image_topic', '/camera/camera/color/image_raw')
         self.declare_parameter('target_object_class', '')  # 空字符串表示检测所有对象
-        self.declare_parameter('detection_fps', 0.00001)  # 检测频率 (Hz)
+        self.declare_parameter('detection_fps',10.0)  # 检测频率 (Hz)
         self.declare_parameter('confidence_threshold', 0.25)
-        self.declare_parameter('verbose', False)  # 新增参数控制是否输出详细信息
+        self.declare_parameter('verbose', False)  # 控制是否输出详细信息
+        # 可强制指定推理设备，默认尝试 GPU
+        self.declare_parameter('device', 'cuda:0')
         
         # Get parameters
         self.color_image_topic = self.get_parameter('color_image_topic').value
@@ -65,14 +70,15 @@ class YoloDetectionNode(Node):
         self.detection_fps = self.get_parameter('detection_fps').value
         self.confidence_threshold = self.get_parameter('confidence_threshold').value
         self.verbose = self.get_parameter('verbose').value
+        self.device = self.get_parameter('device').value
         
         # Initialize CV bridge
         self.bridge = CvBridge()
         
         # Initialize YOLO detector with suppressed output
         with suppress_stdout_stderr():
-            from cv_segmentation import SmartSegmentation
-            self.detector = SmartSegmentation()
+            from utils.cv_segmentation import SmartSegmentation
+            self.detector = SmartSegmentation(device=self.device)
         
         # Subscriber for RGB images
         self.image_sub = self.create_subscription(

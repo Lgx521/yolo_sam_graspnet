@@ -116,3 +116,11 @@ coordinate_transformer:
     #   [0.0, 0.0, 1.0, 0.1],
     #   [0.0, 0.0, 0.0, 1.0]
     # ]
+
+yolo_detection_node:
+  ros__parameters:
+    color_image_topic: "/camera/camera/color/image_raw"
+    target_object_class: ""     # 空字符串表示检测所有对象
+    detection_fps: 10           # 默认实时检测频率
+    confidence_threshold: 0.25
+    verbose: false
