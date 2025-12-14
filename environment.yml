@@ -1,0 +1,30 @@
+name: yolo_sam_graspnet
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - scipy
+  - opencv
+  - pillow
+  - matplotlib
+  - pip:
+    # PyTorch with CUDA support (adjust CUDA version as needed)
+
+    # For CUDA 12.1, use:
+    - torch
+    - torchvision
+    
+    # Open3D for point cloud processing
+    - open3d>=0.17.0
+    
+    # Ultralytics for YOLO-World and SAM
+    - ultralytics>=8.0.0
+    
+    # Additional dependencies
+    - scipy>=1.9.0
+

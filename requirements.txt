@@ -1,0 +1,47 @@
+# Python dependencies for YOLO-SAM-GraspNet ROS2 package
+# Python 3.8+ required
+
+# Core ML/AI libraries
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+# Note: Install PyTorch with CUDA support matching your system
+# For CUDA 11.8: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# For CUDA 12.1: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Point cloud and 3D processing
+open3d>=0.17.0
+
+# Computer vision
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+
+# YOLO-World and SAM (via Ultralytics)
+ultralytics>=8.0.0
+
+# Scientific computing
+numpy>=1.21.0
+scipy>=1.9.0
+
+# Image processing
+Pillow>=9.0.0
+
+# Visualization
+matplotlib>=3.5.0
+
+# Note: ROS2 dependencies should be installed via apt/rosdep:
+# - rclpy
+# - rclcpp
+# - sensor_msgs
+# - geometry_msgs
+# - visualization_msgs
+# - tf2_ros
+# - tf2_geometry_msgs
+# - cv_bridge
+# - image_transport
+# - moveit_msgs
+# - control_msgs
+# - trajectory_msgs
+# - message_filters
+# - sensor_msgs_py
+

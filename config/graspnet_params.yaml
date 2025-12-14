@@ -1,0 +1,95 @@
+grasp_detection_service:
+  ros__parameters:
+    # Model parameters
+    checkpoint_path: "/home/q/下载/checkpoint-rs.tar"
+    num_point: 25000
+    collision_thresh: 0.01
+    voxel_size: 0.01
+    device: "cuda:0"
+    
+    # RGB Camera parameters (Kinova Gen3 Color Camera)
+    # Note: These are example values. For production use, calibrate your specific camera
+    # The Kinova API example shows 640x480 with fx=650.567890, fy=651.112233
+    # Scaled proportionally for 1920x1080 (3x scale factor):
+    rgb_camera_intrinsics:
+      fx: 2612.345961   # 650.567890 * 3
+      fy: 2609.465641   # 651.112233 * 3
+      cx: 946.433817   # (1920/2) + 0.123456*3
+      cy: 96.968156   # (1080/2) + 1.789012*3
+      width: 1920
+      height: 1080
+    
+    # Depth Camera parameters (Kinova Gen3 Depth Camera)
+    # Note: These are example values. For production use, calibrate your specific camera
+    # The Kinova API example shows 424x240 with fx=315.567890, fy=317.112233
+    # Scaled proportionally for 480x270 (scale factor: 480/424 ≈ 1.132):
+    depth_camera_intrinsics:
+      fx: 357.2    # 315.567890 * (480/424)
+      fy: 359.0    # 317.112233 * (480/424) 
+      cx: 240.14   # (480/2) + 0.123456*(480/424)
+      cy: 137.02   # (270/2) + 1.789012*(480/424)
+      width: 480
+      height: 270
+    
+    # Target object for segmentation (empty string for all objects)
+    target_object_class: "bottle"  # Options: "bottle", "cup", "apple", etc.
+    
+    # Frame configuration
+    rgb_camera_frame: "camera_color_frame"
+    depth_camera_frame: "camera_depth_frame"
+    base_frame: "base_link"
+    
+    # Camera topic configuration
+    color_image_topic: "/camera/color/image_raw"
+    depth_image_topic: "/camera/depth_registered/image_rect"
+    camera_info_topic: "/camera/color/camera_info"
+
+kinova_grasp_controller:
+  ros__parameters:
+    # Robot configuration
+    planning_group: "manipulator"
+    base_frame: "base_link"
+    ee_frame: "robotiq_85_base_link"  # 夹爪安装位置
+    gripper_palm_frame: "gripper_palm_center"  
+    
+    # Camera frame configuration
+    rgb_camera_frame: "camera_color_frame"
+    depth_camera_frame: "camera_depth_frame"
+    camera_frame: "camera_depth_frame"  # 主要用于抓取坐标变换的相机frame
+    
+    # Gripper parameters
+    gripper_joint_name: "finger_joint"
+    gripper_closed_position: 0.8
+    gripper_open_position: 0.0
+    gripper_max_width: 0.085  # 85mm max opening
+    
+    # Motion parameters
+    approach_distance: -0.1
+    retreat_distance: 0.1
+    max_velocity_scaling: 0.3
+    max_acceleration_scaling: 0.3
+    
+    # Workspace limits (meters)
+    workspace_limits:
+      min: [-0.7, -0.7, 0.0]
+      max: [0.7, 0.7, 0.8]
+
+coordinate_transformer:
+  ros__parameters:
+    # Note: All coordinate transformations are read from TF tree
+    # The physical relationships between frames are:
+    # 1. RGB camera frame: camera_color_frame
+    # 2. Depth camera frame: camera_depth_frame  
+    # 3. Base coordinate: base_link
+    # 4. Gripper mount: robotiq_85_base_link
+    # 5. Gripper palm center: 8.1cm offset from mount in +Z direction
+    # 6. Camera-gripper axes: Z same direction, X and Y reversed
+    publish_static_transforms: false
+    
+    # Alternative: transformation matrix (if preferred over translation/rotation)
+    # camera_to_ee_matrix: [
+    #   [1.0, 0.0, 0.0, 0.05],
+    #   [0.0, 1.0, 0.0, 0.0],
+    #   [0.0, 0.0, 1.0, 0.1],
+    #   [0.0, 0.0, 0.0, 1.0]
+    # ]
