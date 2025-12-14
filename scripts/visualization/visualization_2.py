@@ -21,11 +21,10 @@ import matplotlib.cm as cm
 from types import SimpleNamespace # 用于创建一个简单的对象来存储配置
 
 # --- 确保GraspNet相关模块在PYTHONPATH中 ---
-# 您可能需要根据您的GraspNet安装路径调整这里
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(ROOT_DIR, 'models'))
-sys.path.append(os.path.join(ROOT_DIR, 'dataset'))
-sys.path.append(os.path.join(ROOT_DIR, 'utils'))
+GRASPNet_ROOT = '/home/sgan/Grasp/graspnet-baseline'
+sys.path.append(GRASPNet_ROOT)
+sys.path.append(os.path.join(GRASPNet_ROOT, 'models'))
+sys.path.append(os.path.join(GRASPNet_ROOT, 'utils'))
 
 from graspnetAPI import GraspGroup
 from graspnet import GraspNet, pred_decode
@@ -102,7 +101,14 @@ def vis_grasps(gg, cloud, cfgs):
     # 如果没有抓取，则直接显示点云
     if len(gg_top_k) == 0:
         print("未检测到有效抓取，仅显示场景点云。")
-        o3d.visualization.draw_geometries([cloud])
+        o3d.visualization.draw(
+            [cloud],
+            title="GraspNet Scene (no grasps)",
+            width=1280,
+            height=720,
+            show_skybox=False,
+            bg_color=(1.0, 1.0, 1.0, 1.0)
+        )
         return
 
     # 准备颜色映射
@@ -125,7 +131,14 @@ def vis_grasps(gg, cloud, cfgs):
         grippers.append(grasp.to_open3d_geometry(color=color))
 
     print(f"正在可视化场景点云和 {len(grippers)} 个最佳抓取姿态...")
-    o3d.visualization.draw_geometries([cloud, *grippers])
+    o3d.visualization.draw(
+        [cloud, *grippers],
+        title="GraspNet Grasps",
+        width=1280,
+        height=720,
+        show_skybox=False,
+        bg_color=(1.0, 1.0, 1.0, 1.0)
+    )
 
 def run_inference(cfgs):
     """主推理流程"""

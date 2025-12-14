@@ -261,36 +261,27 @@ class GraspNetProcessorNode(Node):
 
     def _show_geometries(self, geometries, window_name='Open3D'):
         """
-        封装Open3D展示，若GUI不可用则自动保存截图，避免无画面。
+        使用Open3D新版draw API展示几何体。
+        旧版Visualizer API在某些Linux环境下会黑屏，新版draw API更稳定。
         """
         try:
-            vis = o3d.visualization.Visualizer()
-            vis.create_window(window_name=window_name, width=1280, height=720, visible=True)
-            for g in geometries:
-                vis.add_geometry(g)
-            vis.get_render_option().background_color = np.asarray([0, 0, 0])
-            vis.run()
-            vis.destroy_window()
+            # 使用新版 draw API (Open3D 0.18+)
+            o3d.visualization.draw(
+                geometries, 
+                title=window_name,
+                width=1280,
+                height=720,
+                show_ui=True,
+                show_skybox=False,
+                bg_color=(1.0, 1.0, 1.0, 1.0)  # 纯白背景
+            )
         except Exception as e:
-            # GUI环境不可用时，退化为保存截图
-            try:
-                vis = o3d.visualization.Visualizer()
-                vis.create_window(visible=False)
-                for g in geometries:
-                    vis.add_geometry(g)
-                vis.poll_events()
-                vis.update_renderer()
-                screenshot_path = os.path.join(os.getcwd(), 'open3d_render.png')
-                vis.capture_screen_image(screenshot_path, do_render=True)
-                vis.destroy_window()
-                self.get_logger().warn(f'Open3D窗口不可用，已保存截图: {screenshot_path}, err={e}')
-            except Exception as ee:
-                self.get_logger().error(f'Open3D可视化失败，且截图失败: {ee}')
+            self.get_logger().error(f'Open3D可视化失败: {e}')
 
     def shutdown(self):
         self.get_logger().info('正在关闭节点...')
         self.destroy_node()
-        # rclpy.shutdown() # 让主函数来关闭
+        rclpy.shutdown() # 让主函数来关闭
 
 def main():
     # --- 使用argparse解析GraspNet的参数 ---

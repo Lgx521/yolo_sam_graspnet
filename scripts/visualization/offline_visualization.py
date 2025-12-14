@@ -123,7 +123,14 @@ def main():
         
     if len(gg) == 0:
         print("未加载到任何抓取，只显示点云。")
-        o3d.visualization.draw_geometries([cloud])
+        o3d.visualization.draw(
+            [cloud],
+            title="GraspNet Scene (no grasps)",
+            width=1280,
+            height=720,
+            show_skybox=False,
+            bg_color=(1.0, 1.0, 1.0, 1.0)
+        )
         return
 
     print(f"成功加载 {len(gg)} 个抓取。正在准备可视化...")
@@ -160,9 +167,13 @@ def main():
 
     # 6. 启动可视化
     print(f"正在显示点云和前 {len(grippers)} 个最佳抓取 (颜色代表分数)...")
-    o3d.visualization.draw_geometries(
+    o3d.visualization.draw(
         [cloud, *grippers],
-        window_name=f"GraspNet Visualization"
+        title="GraspNet Visualization",
+        width=1280,
+        height=720,
+        show_skybox=False,
+        bg_color=(1.0, 1.0, 1.0, 1.0)
     )
 
 
