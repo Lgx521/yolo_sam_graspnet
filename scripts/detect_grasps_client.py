@@ -8,7 +8,8 @@ from rclpy.node import Node
 import sys
 
 from kinova_graspnet_ros2.srv import DetectGrasps
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PoseArray
+from std_srvs.srv import Trigger
 
 
 class DetectGraspsClient(Node):
@@ -20,11 +21,19 @@ class DetectGraspsClient(Node):
         # 创建服务客户端
         self.client = self.create_client(DetectGrasps, 'detect_grasps')
         
+        # 创建可视化发布器 (直接发布 PoseArray)
+        self.pose_array_pub = self.create_publisher(
+            PoseArray,
+            'grasp_poses_visualization',
+            10
+        )
+        
         # 等待服务可用
         while not self.client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('正在等待 detect_grasps 服务...')
         
         self.get_logger().info('✅ 连接到抓取检测服务')
+        self.get_logger().info('✅ PoseArray 可视化已启用 (话题: /grasp_poses_visualization)')
     
     def call_detect_grasps(self, target_object_class='bottle', max_grasps=10):
         """调用抓取检测服务"""
@@ -52,6 +61,11 @@ class DetectGraspsClient(Node):
         if future.result() is not None:
             response = future.result()
             self.display_results(response)
+            
+            # 自动发布可视化
+            if response.success and len(response.grasp_poses) > 0:
+                self.publish_visualization(response)
+            
             return response
         else:
             self.get_logger().error('❌ 服务调用失败')
@@ -123,6 +137,36 @@ class DetectGraspsClient(Node):
         print("\n" + "="*80)
         print(f"✅ 检测完成: 共{len(response.grasp_poses)}个抓取，耗时{response.inference_time:.3f}s")
         print("="*80)
+    
+    def publish_visualization(self, response):
+        """
+        发布 PoseArray 用于 RViz 可视化
+        直接在相机坐标系下发布，让 RViz 通过 TF 自动转换
+        """
+        try:
+            # 创建 PoseArray 消息
+            pose_array = PoseArray()
+            # 使用相机坐标系，让 RViz 通过 TF 自动转换到 base_link
+            pose_array.header.frame_id = response.grasp_poses[0].header.frame_id
+            pose_array.header.stamp = self.get_clock().now().to_msg()
+            
+            # 添加所有抓取姿态（限制为前10个）
+            max_display = min(10, len(response.grasp_poses))
+            for i in range(max_display):
+                pose_array.poses.append(response.grasp_poses[i].pose)
+            
+            # 发布
+            self.pose_array_pub.publish(pose_array)
+            
+            print(f"\n🎨 可视化信息:")
+            print(f"   ✅ 已发布 {max_display} 个抓取姿态到 /grasp_poses_visualization")
+            print(f"   📍 坐标系: {pose_array.header.frame_id}")
+            print(f"   💡 在 RViz 中添加 PoseArray 话题即可查看")
+            print(f"      - 话题: /grasp_poses_visualization")
+            print(f"      - Fixed Frame: base_link (推荐) 或 {pose_array.header.frame_id}")
+            
+        except Exception as e:
+            self.get_logger().error(f'❌ 发布可视化失败: {e}')
 
 
 def main(args=None):
