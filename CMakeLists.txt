@@ -33,9 +33,8 @@ install(PROGRAMS
   scripts/grasp_detection_service.py
   scripts/kinova_grasp_controller.py
   scripts/coordinate_transformer.py
-  scripts/grasp_visualizer.py
+  scripts/grasp_visualization_posearray.py
   scripts/grasp_center_publisher.py
-  scripts/grasp_visualizer_base_link.py
   scripts/detect_grasps_client.py
   scripts/yolo_detection_node.py
   scripts/obstacle_geometry_node.py

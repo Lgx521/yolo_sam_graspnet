@@ -17,8 +17,25 @@ ros2 launch kinova_gen3_lite_moveit_config robot.launch.py robot_ip:=192.168.1.1
 ```
 
 
-# Start the yolo object detection
+# Launch the project
+
+1. Launch file
+```bash
+ros2 launch kinova_graspnet_ros2 graspnet_kinova.launch.py
+```
+
+2. Start the yolo object detection
 Notice that you need to activate the conda env of graspnet
 ```bash
 python scripts/yolo_detection_node.py
 ```
+
+3. Start Detect!
+```
+ros2 run kinova_graspnet_ros2 detect_grasps_client.py bottle 10
+```
+where you can change the object that you want to detect.  
+args: 10, means present how many detected grasp pose.
+
+4. Grasp
+Copy the output of the `3rd` terminal to a new terminal.

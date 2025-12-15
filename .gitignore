@@ -11,6 +11,7 @@ src/ros2_control*
 src/control_msgs/
 src/ros2_robotiq*
 src/serial/
+src/kortex/
 build/
 log/
 install/

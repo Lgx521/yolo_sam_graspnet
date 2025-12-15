@@ -59,7 +59,8 @@ grasp_detection_service:
     
     # Frame configuration
     rgb_camera_frame: "camera_color_frame"
-    depth_camera_frame: "camera_depth_frame"
+    # GraspNet使用光学坐标系(X右,Y下,Z前)，必须使用optical_frame
+    depth_camera_frame: "camera_depth_optical_frame"
     base_frame: "base_link"
     
     # Camera topic configuration
@@ -78,8 +79,8 @@ kinova_grasp_controller:
     
     # Camera frame configuration
     rgb_camera_frame: "camera_color_frame"
-    depth_camera_frame: "camera_depth_frame"
-    camera_frame: "camera_depth_frame"  # 主要用于抓取坐标变换的相机frame
+    depth_camera_frame: "camera_depth_optical_frame"
+    camera_frame: "camera_depth_optical_frame"  # 抓取坐标变换使用optical frame
     
     # Gripper parameters
     gripper_joint_name: "finger_joint"

@@ -793,9 +793,10 @@ class GraspDetectionService(Node):
                 pose_msg.pose.position.z = float(pos_tf_camera[2])
                 
                 # 设置转换后的方向（旋转矩阵转四元数）
-                rotation = R.from_matrix(rot_matrix_tf_camera)
+                # 绕Z轴旋转180度（适配相机安装方向）
+                rot_z_180 = R.from_euler('z', np.pi)
+                rotation = R.from_matrix(rot_matrix_tf_camera) * rot_z_180
                 quat = rotation.as_quat()  # [x, y, z, w]
-                # self.get_logger().info(quat)
 
                 pose_msg.pose.orientation.x = quat[0]
                 pose_msg.pose.orientation.y = quat[1]

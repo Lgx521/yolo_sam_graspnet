@@ -108,7 +108,7 @@ def generate_launch_description():
     # Grasp visualizer node
     grasp_visualizer_node = Node(
         package='kinova_graspnet_ros2',
-        executable='grasp_visualizer.py',
+        executable='grasp_visualization_posearray.py',
         name='grasp_visualizer',
         output='screen',
         parameters=[{
@@ -128,7 +128,7 @@ def generate_launch_description():
             'source_frame': 'tool_frame',  # Kinova Gen3 Lite gripper center
             'base_frame': 'base_link',
             'grasp_center_frame': 'grasp_center',
-            'z_offset': 0.03,  # 3 cm
+            'z_offset': -0.04,  # No offset, grasp_center = tool_frame
             'publish_rate': 50.0
         }]
     )
