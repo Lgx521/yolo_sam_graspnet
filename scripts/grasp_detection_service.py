@@ -732,9 +732,9 @@ class GraspDetectionService(Node):
             from scipy.spatial.transform import Rotation as R
 
             graspnet_to_tf_rotation = np.array([
-                [0,   0,  -1],   
-                [-1,  0,   0],   
-                [0,   1,   0]    
+                [0,   0,   1],   
+                [1,   0,   0],   
+                [0,   -1,   0]    
             ])
 
             # # 构建4x4齐次变换矩阵（坐标系变换，只有旋转，无平移）
@@ -794,8 +794,8 @@ class GraspDetectionService(Node):
                 
                 # 设置转换后的方向（旋转矩阵转四元数）
                 # 绕Z轴旋转180度（适配相机安装方向）
-                rot_z_180 = R.from_euler('z', np.pi)
-                rotation = R.from_matrix(rot_matrix_tf_camera) * rot_z_180
+                # rot_z_180 = R.from_euler('z', np.pi)
+                rotation = R.from_matrix(rot_matrix_tf_camera) # * rot_z_180
                 quat = rotation.as_quat()  # [x, y, z, w]
 
                 pose_msg.pose.orientation.x = quat[0]

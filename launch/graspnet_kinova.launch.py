@@ -128,7 +128,7 @@ def generate_launch_description():
             'source_frame': 'tool_frame',  # Kinova Gen3 Lite gripper center
             'base_frame': 'base_link',
             'grasp_center_frame': 'grasp_center',
-            'z_offset': -0.04,  # No offset, grasp_center = tool_frame
+            'z_offset': -0.02,  # No offset, grasp_center = tool_frame
             'publish_rate': 50.0
         }]
     )
