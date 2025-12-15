@@ -117,6 +117,7 @@ def generate_launch_description():
     )
     
     # Grasp center frame publisher node
+    # For Kinova Gen3 Lite: tool_frame is already the gripper center
     grasp_center_publisher_node = Node(
         package='kinova_graspnet_ros2',
         executable='grasp_center_publisher.py',
@@ -124,10 +125,10 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
-            'left_finger_frame': 'robotiq_85_left_finger_tip_link',
-            'right_finger_frame': 'robotiq_85_right_finger_tip_link',
+            'source_frame': 'tool_frame',  # Kinova Gen3 Lite gripper center
+            'base_frame': 'base_link',
             'grasp_center_frame': 'grasp_center',
-            'z_offset': 0.02,  # 3cm offset along Z axis
+            'z_offset': 0.03,  # 3 cm
             'publish_rate': 50.0
         }]
     )

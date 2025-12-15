@@ -41,9 +41,9 @@ class KinovaGraspController(Node):
         super().__init__('kinova_grasp_controller')
         
         # Declare parameters
-        self.declare_parameter('planning_group', 'manipulator')
+        self.declare_parameter('planning_group', 'arm')  # Kinova Gen3 Lite uses 'arm'
         self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('ee_frame', 'robotiq_85_base_link')
+        self.declare_parameter('ee_frame', 'end_effector_link')  # MoveIt IK link
         self.declare_parameter('gripper_palm_frame', 'gripper_palm_center')
         self.declare_parameter('rgb_camera_frame', 'camera_color_frame')
         self.declare_parameter('depth_camera_frame', 'camera_depth_frame')
@@ -113,11 +113,11 @@ class KinovaGraspController(Node):
             callback_group=self.callback_group
         )
         
-        # Gripper action client for Robotiq gripper
+        # Gripper action client for Kinova Gen3 Lite integrated gripper
         self._gripper_action_client = ActionClient(
             self,
             GripperCommand,
-            '/robotiq_gripper_controller/gripper_cmd',
+            '/gen3_lite_2f_gripper_controller/gripper_cmd',
             callback_group=self.callback_group
         )
         

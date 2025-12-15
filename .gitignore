@@ -15,3 +15,5 @@ build/
 log/
 install/
 scripts/visualization/visualization_output/
+sam_b.pt
+yolov8m-world.pt

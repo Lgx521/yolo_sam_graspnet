@@ -13,27 +13,26 @@ from scipy.spatial.transform import Rotation as R
 
 class GraspCenterPublisher(Node):
     """
-    Publishes the grasp_center frame based on robotiq finger tip frames.
+    Publishes the grasp_center frame based on tool_frame.
     
-    The grasp_center frame:
-    - Has the same orientation as the finger tip frames
-    - Is positioned at the midpoint between left and right finger tips
-    - Is offset 3cm forward along the Z-axis (gripper approach direction)
+    For Kinova Gen3 Lite with integrated gripper:
+    - tool_frame is already the gripper center point published by the robot
+    - This node re-publishes it as grasp_center with optional offset
     """
     
     def __init__(self):
         super().__init__('grasp_center_publisher')
         
         # Declare parameters
-        self.declare_parameter('left_finger_frame', 'robotiq_85_left_finger_tip_link')
-        self.declare_parameter('right_finger_frame', 'robotiq_85_right_finger_tip_link')
+        self.declare_parameter('source_frame', 'tool_frame')  # The frame to use as reference
+        self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('grasp_center_frame', 'grasp_center')
-        self.declare_parameter('z_offset', 0.02)  # 1.5cm offset along Z axis
+        self.declare_parameter('z_offset', 0.0)  # Optional offset along Z axis (approach direction)
         self.declare_parameter('publish_rate', 50.0)  # Hz
         
         # Get parameters
-        self.left_finger_frame = self.get_parameter('left_finger_frame').value
-        self.right_finger_frame = self.get_parameter('right_finger_frame').value
+        self.source_frame = self.get_parameter('source_frame').value
+        self.base_frame = self.get_parameter('base_frame').value
         self.grasp_center_frame = self.get_parameter('grasp_center_frame').value
         self.z_offset = self.get_parameter('z_offset').value
         self.publish_rate = self.get_parameter('publish_rate').value
@@ -47,68 +46,50 @@ class GraspCenterPublisher(Node):
         self.timer = self.create_timer(1.0 / self.publish_rate, self.publish_grasp_center)
         
         self.get_logger().info(f'Grasp center publisher initialized')
-        self.get_logger().info(f'  Left finger: {self.left_finger_frame}')
-        self.get_logger().info(f'  Right finger: {self.right_finger_frame}')
+        self.get_logger().info(f'  Source frame: {self.source_frame}')
+        self.get_logger().info(f'  Base frame: {self.base_frame}')
         self.get_logger().info(f'  Grasp center: {self.grasp_center_frame}')
         self.get_logger().info(f'  Z offset: {self.z_offset}m')
     
     def publish_grasp_center(self):
-        """Compute and publish grasp_center frame"""
+        """Compute and publish grasp_center frame based on tool_frame"""
         try:
-            # Get transforms for both finger tips relative to base_link
-            # This ensures we have a common reference frame
-            left_transform = self.tf_buffer.lookup_transform(
-                'base_link',
-                self.left_finger_frame,
+            # Get transform from base_link to tool_frame
+            tool_transform = self.tf_buffer.lookup_transform(
+                self.base_frame,
+                self.source_frame,
                 rclpy.time.Time()
             )
             
-            right_transform = self.tf_buffer.lookup_transform(
-                'base_link',
-                self.right_finger_frame,
-                rclpy.time.Time()
-            )
-            
-            # Extract positions
-            left_pos = np.array([
-                left_transform.transform.translation.x,
-                left_transform.transform.translation.y,
-                left_transform.transform.translation.z
+            # Extract position
+            pos = np.array([
+                tool_transform.transform.translation.x,
+                tool_transform.transform.translation.y,
+                tool_transform.transform.translation.z
             ])
             
-            right_pos = np.array([
-                right_transform.transform.translation.x,
-                right_transform.transform.translation.y,
-                right_transform.transform.translation.z
-            ])
-            
-            # Calculate midpoint
-            midpoint = (left_pos + right_pos) / 2.0
-            
-            # Use the orientation from left finger (they should be the same)
-            # Extract rotation as quaternion
-            q = left_transform.transform.rotation
-            rotation = R.from_quat([q.x, q.y, q.z, q.w])
-            rotation_matrix = rotation.as_matrix()
-            
-            # Apply Z-axis offset (forward along gripper Z-axis)
-            # In the finger frame, Z points forward (approach direction)
-            z_axis = rotation_matrix[:, 2]
-            grasp_center_pos = midpoint + z_axis * self.z_offset
+            # Apply Z-axis offset if configured
+            if abs(self.z_offset) > 0.001:
+                q = tool_transform.transform.rotation
+                rotation = R.from_quat([q.x, q.y, q.z, q.w])
+                rotation_matrix = rotation.as_matrix()
+                # Z-axis is the approach direction
+                z_axis = rotation_matrix[:, 2]
+                pos = pos + z_axis * self.z_offset
             
             # Create and publish transform from base_link to grasp_center
             t = TransformStamped()
             t.header.stamp = self.get_clock().now().to_msg()
-            t.header.frame_id = 'base_link'
+            t.header.frame_id = self.base_frame
             t.child_frame_id = self.grasp_center_frame
             
             # Set translation
-            t.transform.translation.x = grasp_center_pos[0]
-            t.transform.translation.y = grasp_center_pos[1]
-            t.transform.translation.z = grasp_center_pos[2]
+            t.transform.translation.x = pos[0]
+            t.transform.translation.y = pos[1]
+            t.transform.translation.z = pos[2]
             
-            # Set rotation (same as finger tips)
-            t.transform.rotation = left_transform.transform.rotation
+            # Set rotation (same as tool_frame)
+            t.transform.rotation = tool_transform.transform.rotation
             
             # Publish transform
             self.tf_broadcaster.sendTransform(t)

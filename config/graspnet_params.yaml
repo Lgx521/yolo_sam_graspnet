@@ -70,9 +70,10 @@ grasp_detection_service:
 kinova_grasp_controller:
   ros__parameters:
     # Robot configuration
-    planning_group: "manipulator"
+    planning_group: "arm"  # Kinova Gen3 Lite uses 'arm' not 'manipulator'
     base_frame: "base_link"
-    ee_frame: "tool_frame"  # 机械臂末端工具坐标系
+    # ee_frame: "tool_frame"  # 机械臂末端工具坐标系
+    ee_frame: "end_effector_link"
     gripper_palm_frame: "gripper_palm_center"  
     
     # Camera frame configuration

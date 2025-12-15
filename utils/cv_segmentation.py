@@ -23,7 +23,7 @@ from ultralytics.models.sam import Predictor as SAMPredictor
 class SmartSegmentation:
     """智能分割类 - 集成YOLO和SAM"""
     
-    def __init__(self, sam_model='sam_b.pt', yolo_model='yolov8s-world.pt', device=None):
+    def __init__(self, sam_model='sam_b.pt', yolo_model='yolov8m-world.pt', device=None):
         """
         初始化分割模型
         
