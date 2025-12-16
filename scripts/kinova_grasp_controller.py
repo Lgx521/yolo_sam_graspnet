@@ -495,17 +495,36 @@ class KinovaGraspController(Node):
             # Note: lookup_transform('target', 'source') gives T_target_source.
             # We want T_gc_ee, but TF gives us T_ee_gc. So we will invert it.
             try:
+                # 先检查grasp_center frame是否存在
+                try:
+                    frames_str = self.tf_buffer.all_frames_as_string()
+                    if 'grasp_center' not in frames_str:
+                        self.get_logger().error(f"'grasp_center' frame not found in TF tree!")
+                        self.get_logger().error(f"Available frames: {frames_str[:500]}")
+                        self.get_logger().error("Please ensure grasp_center_publisher.py is running.")
+                        return None
+                except Exception as check_error:
+                    self.get_logger().warn(f"Could not check TF frames: {check_error}")
+                
                 # Let's get T_ee_gc (transform from grasp_center to ee_frame)
                 transform_ee_to_gc = self.tf_buffer.lookup_transform(
                     self.ee_frame,       # Target Frame
                     'grasp_center',      # Source Frame
                     rclpy.time.Time(),
-                    timeout=rclpy.duration.Duration(seconds=1.0)
+                    timeout=rclpy.duration.Duration(seconds=3.0)  # 增加超时时间
                 )
                 T_ee_gc_static = self.transform_to_matrix(transform_ee_to_gc)
+                self.get_logger().info(f"Successfully found transform from 'grasp_center' to '{self.ee_frame}'")
 
             except TransformException as e:
                 self.get_logger().error(f"Failed to look up transform from 'grasp_center' to '{self.ee_frame}': {e}")
+                self.get_logger().error(f"Error type: {type(e).__name__}")
+                # 尝试列出所有可用的frame
+                try:
+                    frames_str = self.tf_buffer.all_frames_as_string()
+                    self.get_logger().error(f"Available frames in TF tree: {frames_str[:1000]}")
+                except Exception as list_error:
+                    self.get_logger().error(f"Could not list frames: {list_error}")
                 self.get_logger().error("Ensure grasp_center_publisher.py is running and publishing the TF.")
                 return None
 
