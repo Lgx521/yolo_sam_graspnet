@@ -71,10 +71,10 @@ class GraspCenterPublisher(Node):
             # Apply Z-axis offset if configured
             if abs(self.z_offset) > 0.001:
                 q = tool_transform.transform.rotation
-                rotation = R.from_quat([q.x, q.y, q.z, q.w])
-                rotation_matrix = rotation.as_matrix()
+            rotation = R.from_quat([q.x, q.y, q.z, q.w])
+            rotation_matrix = rotation.as_matrix()
                 # Z-axis is the approach direction
-                z_axis = rotation_matrix[:, 2]
+            z_axis = rotation_matrix[:, 2]
                 pos = pos + z_axis * self.z_offset
             
             # Create and publish transform from base_link to grasp_center

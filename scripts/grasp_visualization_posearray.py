@@ -34,7 +34,8 @@ class GraspVisualizationPoseArray(Node):
         
         # Declare parameters
         self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('camera_frame', 'camera_depth_optical_frame')  # GraspNet uses optical frame
+        # self.declare_parameter('camera_frame', 'camera_depth_optical_frame')  # GraspNet uses optical frame
+        self.declare_parameter('camera_frame', 'camera_color_frame')  # GraspNet uses optical frame
         self.declare_parameter('max_display_grasps', 10)
         
         # Get parameters

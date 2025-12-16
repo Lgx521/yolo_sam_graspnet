@@ -92,7 +92,7 @@ class GraspDetectionService(Node):
         
         # Camera topic configuration
         self.declare_parameter('color_image_topic', '/camera/camera/color/image_raw')
-        self.declare_parameter('depth_image_topic', '/camera/camera/depth/image_raw')
+        self.declare_parameter('depth_image_topic', '/camera/camera/aligned_depth_to_color/image_raw')
         self.declare_parameter('camera_info_topic', '/camera/camera/color/camera_info')
         
         # Get parameters
@@ -331,8 +331,13 @@ class GraspDetectionService(Node):
                          timestamp_str: str,
                          workspace_min: Optional[Point] = None,
                          workspace_max: Optional[Point] = None,
-                         target_object_class: Optional[str] = None) -> Tuple[torch.Tensor, o3d.geometry.PointCloud]:
-        """Process RGBD data to generate point cloud"""
+                         target_object_class: Optional[str] = None) -> Tuple[torch.Tensor, o3d.geometry.PointCloud, bool]:
+        """Process RGBD data to generate point cloud
+        
+        Returns:
+            Tuple of (point_cloud_tensor, o3d_point_cloud, is_aligned_depth)
+            is_aligned_depth: True if depth image is aligned to RGB camera
+        """
         
         # Convert ROS messages to numpy arrays
         color_image = self.bridge.imgmsg_to_cv2(color_msg, desired_encoding='rgb8')
@@ -346,7 +351,8 @@ class GraspDetectionService(Node):
         
         # Check if we're using registered depth (aligned to RGB camera)
         # If depth image has same resolution as RGB, use RGB camera intrinsics
-        if depth_image.shape == color_image.shape[:2]:
+        is_aligned_depth = (depth_image.shape == color_image.shape[:2])
+        if is_aligned_depth:
             self.get_logger().info('Detected registered depth image (aligned to RGB)')
             self.get_logger().info(f'Using RGB camera intrinsics: fx={self.rgb_camera_params["fx"]:.2f}, fy={self.rgb_camera_params["fy"]:.2f}')
             fx = self.rgb_camera_params['fx']
@@ -580,7 +586,7 @@ class GraspDetectionService(Node):
         o3d_cloud.points = o3d.utility.Vector3dVector(cloud_masked.astype(np.float32))
         o3d_cloud.colors = o3d.utility.Vector3dVector(color_masked.astype(np.float32))
         
-        return cloud_tensor, o3d_cloud
+        return cloud_tensor, o3d_cloud, is_aligned_depth
     
     def predict_grasps(self, point_cloud: torch.Tensor) -> GraspGroup:
         """Predict grasp poses"""
@@ -681,8 +687,23 @@ class GraspDetectionService(Node):
                 depth_image = request.depth_image
                 camera_info = request.camera_info
             
+            # 检查深度图像的frame_id，对齐后的深度图像frame_id应该是color_optical_frame
+            depth_frame_id = depth_image.header.frame_id if hasattr(depth_image, 'header') else None
+            color_frame_id = color_image.header.frame_id if hasattr(color_image, 'header') else None
+            self.get_logger().info(f'Depth image frame_id: {depth_frame_id}')
+            self.get_logger().info(f'Color image frame_id: {color_frame_id}')
+            
+            # 判断是否使用对齐后的深度图像：如果frame_id包含color或aligned，说明是对齐后的
+            use_color_frame_for_grasp = False
+            if depth_frame_id:
+                if 'color' in depth_frame_id.lower() or 'aligned' in depth_frame_id.lower():
+                    use_color_frame_for_grasp = True
+                    self.get_logger().info(f'Detected aligned depth image, will use color camera frame for grasp poses')
+                else:
+                    self.get_logger().info(f'Using depth camera frame for grasp poses')
+            
             # Process RGBD data
-            point_cloud, o3d_cloud = self.process_rgbd_data(
+            point_cloud, o3d_cloud, is_aligned_depth = self.process_rgbd_data(
                     color_image,
                     depth_image,
                     camera_info,
@@ -784,7 +805,26 @@ class GraspDetectionService(Node):
                 
                 # 构建ROS消息
                 pose_msg = PoseStamped()
-                pose_msg.header.frame_id = self.depth_camera_frame
+                # 根据深度图像的frame_id决定使用哪个frame
+                # 如果深度图像是对齐到彩色图像的，应该使用彩色相机的optical frame
+                if use_color_frame_for_grasp:
+                    # 对齐后的深度图像，点云在彩色相机坐标系下
+                    # GraspNet使用光学坐标系，应该使用color_optical_frame
+                    # 如果depth_frame_id包含optical，使用它；否则尝试构造optical_frame名称
+                    if depth_frame_id and 'optical' in depth_frame_id.lower():
+                        pose_msg.header.frame_id = depth_frame_id  # 直接使用深度图像的frame_id
+                    else:
+                        # 尝试构造optical_frame名称：camera_color_frame -> camera_color_optical_frame
+                        if self.rgb_camera_frame.endswith('_frame'):
+                            optical_frame = self.rgb_camera_frame.replace('_frame', '_optical_frame')
+                        else:
+                            optical_frame = self.rgb_camera_frame + '_optical_frame'
+                        pose_msg.header.frame_id = optical_frame
+                    self.get_logger().info(f'Using color optical frame: {pose_msg.header.frame_id} (aligned depth detected)')
+                else:
+                    # 原始深度图像，点云在深度相机坐标系下，使用深度相机frame
+                    pose_msg.header.frame_id = self.depth_camera_frame
+                    self.get_logger().info(f'Using depth camera frame: {self.depth_camera_frame} (native depth)')
                 pose_msg.header.stamp = self.get_clock().now().to_msg()
                 
                 # 设置转换后的位置
