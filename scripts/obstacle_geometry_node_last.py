@@ -31,37 +31,42 @@ from tf2_ros.transform_listener import TransformListener
 
 import traceback
 
-import sys
-sys.path.append('/home/sgan/Grasp/graspnet-baseline/kinova_graspnet_ros2/utils')
+# 导入服务定义
 from kinova_graspnet_ros2.srv import BuildObstacles
 
+# 尝试从grasp_detection_service导入点云创建函数，如果失败则使用本地定义
 try:
     from grasp_detection_service import create_point_cloud_from_depth_image, GraspNetCameraInfo
 except ImportError:
-    print("警告：无法从grasp_detection_service导入，将使用本地定义。")
-    class GraspNetCameraInfo:
-        def __init__(self, width, height, fx, fy, cx, cy, scale):
-            self.width, self.height, self.fx, self.fy, self.cx, self.cy, self.scale = width, height, fx, fy, cx, cy, scale
-    def create_point_cloud_from_depth_image(depth, camera, organized=True):
-        xmap, ymap = np.meshgrid(np.arange(camera.width), np.arange(camera.height))
-        points_z = depth / camera.scale
-        points_x = (xmap - camera.cx) * points_z / camera.fx
-        points_y = (ymap - camera.cy) * points_z / camera.fy
-        points = np.stack([points_x, points_y, points_z], axis=-1)
-        return points if organized else points.reshape([-1, 3])
+    # 如果无法导入，尝试从utils.data_utils导入（grasp_detection_service使用的源）
+    try:
+        from utils.data_utils import CameraInfo as GraspNetCameraInfo, create_point_cloud_from_depth_image
+    except ImportError:
+        # 如果都失败，使用本地定义
+        print("警告：无法从grasp_detection_service或utils.data_utils导入，将使用本地定义。")
+        class GraspNetCameraInfo:
+            def __init__(self, width, height, fx, fy, cx, cy, scale):
+                self.width, self.height, self.fx, self.fy, self.cx, self.cy, self.scale = width, height, fx, fy, cx, cy, scale
+        def create_point_cloud_from_depth_image(depth, camera, organized=True):
+            xmap, ymap = np.meshgrid(np.arange(camera.width), np.arange(camera.height))
+            points_z = depth / camera.scale
+            points_x = (xmap - camera.cx) * points_z / camera.fx
+            points_y = (ymap - camera.cy) * points_z / camera.fy
+            points = np.stack([points_x, points_y, points_z], axis=-1)
+            return points if organized else points.reshape([-1, 3])
 
 class ObstacleGeometryNode(Node):
     def __init__(self):
         super().__init__('obstacle_geometry_node')
 
-        self.declare_parameter('color_image_topic', '/camera/color/image_raw')
-        self.declare_parameter('depth_image_topic', '/camera/depth/image_raw')
+        self.declare_parameter('color_image_topic', '/camera/camera/color/image_raw')
+        self.declare_parameter('depth_image_topic', '/camera/camera/aligned_depth_to_color/image_raw')
         self.declare_parameter('depth_camera_frame', 'camera_link')
         self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('depth_camera_intrinsics.fx', 336.190430)
-        self.declare_parameter('depth_camera_intrinsics.fy', 336.190430)
-        self.declare_parameter('depth_camera_intrinsics.cx', 230.193512)
-        self.declare_parameter('depth_camera_intrinsics.cy', 138.111130)
+        self.declare_parameter('depth_camera_intrinsics.fx', 381.070312)
+        self.declare_parameter('depth_camera_intrinsics.fy', 381.070312)
+        self.declare_parameter('depth_camera_intrinsics.cx', 317.828369)
+        self.declare_parameter('depth_camera_intrinsics.cy', 239.000763)
 
         self.color_topic = self.get_parameter('color_image_topic').value
         self.depth_topic = self.get_parameter('depth_image_topic').value
@@ -75,7 +80,43 @@ class ObstacleGeometryNode(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.bridge = CvBridge()
-        self.segmentation_module = SmartSegmentation(device='cuda:0')
+        
+        # 设置模型路径（相对于脚本目录）
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        package_root = os.path.dirname(script_dir)
+        sam_model_path = os.path.join(package_root, 'sam_b.pt')
+        yolo_model_path = os.path.join(package_root, 'yolov8m-world.pt')
+        
+        # 检查模型文件是否存在，如果不存在则尝试使用相对路径
+        if not os.path.exists(sam_model_path):
+            # 尝试使用相对于当前工作目录的路径
+            alt_sam_path = os.path.join(os.getcwd(), 'sam_b.pt')
+            if os.path.exists(alt_sam_path):
+                sam_model_path = alt_sam_path
+                self.get_logger().info(f"使用SAM模型: {sam_model_path}")
+            else:
+                self.get_logger().warn(f"SAM模型文件不存在: {sam_model_path}，将使用默认文件名（期望在当前目录或模型搜索路径）")
+                sam_model_path = 'sam_b.pt'
+        else:
+            self.get_logger().info(f"使用SAM模型: {sam_model_path}")
+            
+        if not os.path.exists(yolo_model_path):
+            # 尝试使用相对于当前工作目录的路径
+            alt_yolo_path = os.path.join(os.getcwd(), 'yolov8m-world.pt')
+            if os.path.exists(alt_yolo_path):
+                yolo_model_path = alt_yolo_path
+                self.get_logger().info(f"使用YOLO模型: {yolo_model_path}")
+            else:
+                self.get_logger().warn(f"YOLO模型文件不存在: {yolo_model_path}，将使用默认文件名（期望在当前目录或模型搜索路径）")
+                yolo_model_path = 'yolov8m-world.pt'
+        else:
+            self.get_logger().info(f"使用YOLO模型: {yolo_model_path}")
+        
+        self.segmentation_module = SmartSegmentation(
+            sam_model=sam_model_path,
+            yolo_model=yolo_model_path,
+            device='cuda:0'
+        )
         self.apply_planning_scene_client = self.create_client(ApplyPlanningScene, '/apply_planning_scene')
         while not self.apply_planning_scene_client.wait_for_service(timeout_sec=2.0):
             self.get_logger().info('Waiting for /apply_planning_scene service...')
@@ -141,7 +182,6 @@ class ObstacleGeometryNode(Node):
                     self.obstacle_names.append(obstacle_name)
                     obstacle_count += 1
                 except Exception as e:
-                    # 【修复2】修正日志打印方式
                     self.get_logger().error(f"Error processing {class_name}_{i}: {e}\n{traceback.format_exc()}")
 
         response.success, response.message, response.num_obstacles_built = True, f"Successfully built {obstacle_count} obstacles.", obstacle_count
@@ -160,7 +200,6 @@ class ObstacleGeometryNode(Node):
             return None
 
     def add_mesh_to_planning_scene_service(self, name: str, mesh_o3d: o3d.geometry.TriangleMesh, frame_id: str):
-        # 【修复1】修正CollisionObject的创建方式
         co = CollisionObject()
         co.header.stamp = self.get_clock().now().to_msg() # 使用节点时钟
         co.header.frame_id = frame_id

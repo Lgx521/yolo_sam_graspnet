@@ -11,6 +11,7 @@ from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Point, Pose
 import cv2
 import sys
+import os
 from typing import Optional
 import time
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
@@ -24,16 +25,14 @@ if PACKAGE_ROOT not in sys.path:
 from moveit_msgs.msg import PlanningScene, CollisionObject
 from shape_msgs.msg import Mesh, MeshTriangle
 
-# 假设您的 cv_segmentation.py 在这个路径下
-sys.path.append('/home/roar/graspnet/graspnet-baseline/kinova_graspnet_ros2/utils')
+# 导入分割模块
 from utils.cv_segmentation import segment_objects
 
 # 导入我们创建的服务
 from kinova_graspnet_ros2.srv import GenerateObstacles
 
-# 导入与 grasp_detection_service.py 相同的点云创建工具
-sys.path.append('/home/roar/graspnet/graspnet-baseline/utils')
-from data_utils import CameraInfo as GraspNetCameraInfo, create_point_cloud_from_depth_image
+# 导入点云创建工具
+from utils.data_utils import CameraInfo as GraspNetCameraInfo, create_point_cloud_from_depth_image
 
 
 class ObstacleGeometryNode(Node):
@@ -44,11 +43,11 @@ class ObstacleGeometryNode(Node):
     def __init__(self):
         super().__init__('obstacle_geometry_node')
 
-        # 声明参数 (与您的版本相同)
-        self.declare_parameter('color_image_topic', '/camera/color/image_raw')
-        self.declare_parameter('depth_image_topic', '/camera/depth_registered/image_rect')
-        self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
-        self.declare_parameter('depth_camera_frame', 'camera_depth_frame')
+        # 声明参数 - 匹配实际相机话题
+        self.declare_parameter('color_image_topic', '/camera/camera/color/image_raw')
+        self.declare_parameter('depth_image_topic', '/camera/camera/aligned_depth_to_color/image_raw')
+        self.declare_parameter('camera_info_topic', '/camera/camera/color/camera_info')
+        self.declare_parameter('depth_camera_frame', 'camera_color_optical_frame')
 
         # 获取参数
         color_topic = self.get_parameter('color_image_topic').value
@@ -98,6 +97,10 @@ class ObstacleGeometryNode(Node):
         )
 
         self.get_logger().info('Obstacle Geometry Node (Direct Publisher) 已初始化...')
+        self.get_logger().info(f'订阅彩色图像话题: {color_topic}')
+        self.get_logger().info(f'订阅深度图像话题: {depth_topic}')
+        self.get_logger().info(f'订阅相机信息话题: {info_topic}')
+        self.get_logger().info(f'相机坐标系: {self.camera_frame}')
 
     # 相机回调函数 (与您的版本相同)
     def color_callback(self, msg: Image): self.latest_color_image = msg; self.check_data_ready()
@@ -106,11 +109,17 @@ class ObstacleGeometryNode(Node):
     def check_data_ready(self):
         if not self.camera_data_ready:
             if self.latest_color_image and self.latest_depth_image and self.latest_camera_info:
-                self.camera_data_ready = True; self.get_logger().info('相机数据已准备就绪。')
+                self.camera_data_ready = True
+                self.get_logger().info('相机数据已准备就绪。')
+                self.get_logger().info(f'彩色图像尺寸: {self.latest_color_image.width}x{self.latest_color_image.height}')
+                self.get_logger().info(f'深度图像尺寸: {self.latest_depth_image.width}x{self.latest_depth_image.height}')
 
     def generate_obstacles_callback(self, request: GenerateObstacles.Request, response: GenerateObstacles.Response):
         if not self.camera_data_ready:
-            response.success = False; response.message = "相机数据尚未准备好。"; self.get_logger().warn(response.message)
+            status_msg = f"相机数据尚未准备好。彩色图像: {self.latest_color_image is not None}, 深度图像: {self.latest_depth_image is not None}, 相机信息: {self.latest_camera_info is not None}"
+            response.success = False
+            response.message = status_msg
+            self.get_logger().warn(status_msg)
             return response
             
         self.get_logger().info(f"收到障碍物生成请求，目标物体为: '{request.target_object_class}'")
@@ -223,7 +232,13 @@ class ObstacleGeometryNode(Node):
                 self.planning_scene_pub.publish(planning_scene_msg)
                 self.get_logger().info(f"已将 {len(final_collision_objects)} 个【独立】障碍物发布到规划场景。")
 
-            self.marker_pub.publish(marker_array)
+            # 发布可视化标记（即使为空也发布，以清除之前的标记）
+            if len(marker_array.markers) > 0:
+                self.marker_pub.publish(marker_array)
+                self.get_logger().info(f"已发布 {len(marker_array.markers)} 个可视化标记到话题 'obstacle_markers'")
+            else:
+                # 如果没有标记，发布一个空数组来清除之前的标记
+                self.marker_pub.publish(marker_array)
             
             msg = f"成功生成并发布了 {len(final_collision_objects)} 个【独立】障碍物。"
             response.success = True; response.message = msg; self.get_logger().info(msg)
